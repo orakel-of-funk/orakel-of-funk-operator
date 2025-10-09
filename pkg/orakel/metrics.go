@@ -5,7 +5,7 @@ import (
 
 	"gonum.org/v1/gonum/stat"
 
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/recording"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
 )
 
 type CheckMetricsSummary struct {

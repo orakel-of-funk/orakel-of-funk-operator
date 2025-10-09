@@ -36,7 +36,7 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.5.0
         with:
           name: orakel-of-funk
-          repository: fhnw-imvs/fhnw-kubeseccontext
+          repository: orakel-of-funk/orakel-of-funk-operator
           tag: ${{ steps.docker_meta.outputs.version }}
           path: deploy/charts/orakel-of-funk
           registry: ghcr.io

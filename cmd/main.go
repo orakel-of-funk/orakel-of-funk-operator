@@ -24,11 +24,11 @@ import (
 
 	"k8s.io/klog/v2"
 
-	checksv1alpha1 "github.com/fhnw-imvs/fhnw-kubeseccontext/api/v1alpha1"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/controller/namespace"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/controller/workload"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/valkey"
-	webhookv1alpha1 "github.com/fhnw-imvs/fhnw-kubeseccontext/internal/webhook/v1alpha1"
+	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/controller/namespace"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/controller/workload"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
+	webhookv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

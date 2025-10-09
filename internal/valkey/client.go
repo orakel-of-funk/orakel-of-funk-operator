@@ -8,7 +8,7 @@ import (
 
 	valkey "github.com/valkey-io/valkey-go"
 
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/recording"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
 )
 
 type ValkeyClient struct {

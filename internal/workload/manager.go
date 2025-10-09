@@ -24,10 +24,10 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/retry"
 
-	checksv1alpha1 "github.com/fhnw-imvs/fhnw-kubeseccontext/api/v1alpha1"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/valkey"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/pkg/checks"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/pkg/orakel"
+	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/checks"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/orakel"
 )
 
 var (

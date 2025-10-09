@@ -32,13 +32,13 @@ To generate the Certificates used by the webhooks, the helm chart relies on `cer
 
 ## Installation
 
-The Helm chart is available from the Github package registry: [Orakel of Funk Helm Chart](https://github.com/fhnw-imvs/fhnw-kubeseccontext/pkgs/container/fhnw-kubeseccontext%2Forakel-of-funk)
+The Helm chart is available from the Github package registry: [Orakel of Funk Helm Chart](https://github.com/orakel-of-funk/orakel-of-funk-operator/pkgs/container/fhnw-kubeseccontext%2Forakel-of-funk)
 
 **Since this is an OCI registry, you need to have at least Helm 3.8.0**
 
 To install the chart, you can use the following command:
 ```
-helm install orakel-of-funk oci://ghcr.io/fhnw-imvs/fhnw-kubeseccontext/orakel-of-funk:0.1.0
+helm install orakel-of-funk oci://ghcr.io/orakel-of-funk/orakel-of-funk-operator/orakel-of-funk:0.1.0
 ```
 
 As long as the repository and packages repository are private, you will need to use a personal access token with the `read:packages` scope to authenticate to the registry. You can do this by running the following command:

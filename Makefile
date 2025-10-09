@@ -29,7 +29,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # funk.fhnw.ch/orakel-of-funk-bundle:$VERSION and funk.fhnw.ch/orakel-of-funk-catalog:$VERSION.
-IMAGE_TAG_BASE ?= ghcr.io/fhnw-imvs/fhnw-kubeseccontext
+IMAGE_TAG_BASE ?= ghcr.io/orakel-of-funk/orakel-of-funk-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)

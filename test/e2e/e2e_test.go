@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/test/utils"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/test/utils"
 )
 
 const namespace = "orakel-of-funk-system"

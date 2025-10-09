@@ -25,7 +25,7 @@ orakel:
   image:
     # -- Prefix for the image repository, if you mirror the images to a private registry, you need to set this.
     registry: ghcr.io
-    repository: fhnw-imvs/fhnw-kubeseccontext
+    repository: orakel-of-funk/orakel-of-funk-operator
     pullPolicy: IfNotPresent
 
   # -- The operator clones a full namespace, and recreates all resources within so the service account needs to have the permissions to do so

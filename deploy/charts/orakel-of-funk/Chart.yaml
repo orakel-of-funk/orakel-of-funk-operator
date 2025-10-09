@@ -2,7 +2,7 @@ apiVersion: v2
 name: orakel-of-funk
 description: Keep your Kubernetes workloads in tune — secure and functional.
 type: application
-icon: https://raw.githubusercontent.com/fhnw-imvs/fhnw-kubeseccontext/refs/heads/main/docs/images/orakel-of-funk-logo-small.png
+icon: https://raw.githubusercontent.com/orakel-of-funk/orakel-of-funk-operator/refs/heads/main/docs/images/orakel-of-funk-logo-small.png
 keywords:
   - security
   - compliance

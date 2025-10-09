@@ -1,4 +1,4 @@
-module github.com/fhnw-imvs/fhnw-kubeseccontext
+module github.com/orakel-of-funk/orakel-of-funk-operator
 
 go 1.24.0
 

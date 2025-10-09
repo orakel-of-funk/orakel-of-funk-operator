@@ -9,7 +9,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: orakel-of-funk
-repo: github.com/fhnw-imvs/fhnw-kubeseccontext
+repo: github.com/orakel-of-funk/orakel-of-funk-operator
 resources:
 - api:
     crdVersion: v1
@@ -18,7 +18,7 @@ resources:
   domain: funk.fhnw.ch
   group: checks
   kind: WorkloadHardeningCheck
-  path: github.com/fhnw-imvs/fhnw-kubeseccontext/api/v1alpha1
+  path: github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1
   version: v1alpha1
   webhooks:
     defaulting: true
@@ -31,7 +31,7 @@ resources:
   domain: funk.fhnw.ch
   group: checks
   kind: NamespaceHardeningCheck
-  path: github.com/fhnw-imvs/fhnw-kubeseccontext/api/v1alpha1
+  path: github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1
   version: v1alpha1
   webhooks:
     defaulting: true

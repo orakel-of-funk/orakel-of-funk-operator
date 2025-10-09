@@ -25,12 +25,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	checksv1alpha1 "github.com/fhnw-imvs/fhnw-kubeseccontext/api/v1alpha1"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/namespace"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/recording"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/internal/valkey"
-	wh "github.com/fhnw-imvs/fhnw-kubeseccontext/internal/workload"
-	"github.com/fhnw-imvs/fhnw-kubeseccontext/pkg/orakel"
+	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
+	wh "github.com/orakel-of-funk/orakel-of-funk-operator/internal/workload"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/orakel"
 )
 
 type WorkloadCheckRunner struct {
