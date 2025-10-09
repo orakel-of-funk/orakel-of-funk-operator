@@ -11,7 +11,7 @@ rules:
   verbs:
   - '*'
 - apiGroups:
-  - checks.funk.fhnw.ch
+  - orakel.ofunk.org
   resources:
   - namespacehardeningchecks
   - workloadhardeningchecks
@@ -24,14 +24,14 @@ rules:
   - update
   - watch
 - apiGroups:
-  - checks.funk.fhnw.ch
+  - orakel.ofunk.org
   resources:
   - namespacehardeningchecks/finalizers
   - workloadhardeningchecks/finalizers
   verbs:
   - update
 - apiGroups:
-  - checks.funk.fhnw.ch
+  - orakel.ofunk.org
   resources:
   - namespacehardeningchecks/status
   - workloadhardeningchecks/status

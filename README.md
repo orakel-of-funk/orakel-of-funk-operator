@@ -61,7 +61,7 @@ This resource targets a single workload (currently Deployment, StatefulSet or Da
 An example of a `WorkloadHardeningCheck` resource is shown below:
 
 ```yaml
-apiVersion: checks.funk.fhnw.ch/v1alpha1
+apiVersion: orakel.ofunk.org/v1alpha1
 kind: WorkloadHardeningCheck
 metadata:
   name: write-fs-emptydir
@@ -87,7 +87,7 @@ This resource targets a whole namespace and applies the hardening checks to all 
 An example of a `NamespaceHardeningCheck` resource is shown below:
 
 ```yaml
-apiVersion: checks.funk.fhnw.ch/v1alpha1
+apiVersion: orakel.ofunk.org/v1alpha1
 kind: NamespaceHardeningCheck
 metadata:
   labels:

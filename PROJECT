@@ -2,7 +2,7 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: funk.fhnw.ch
+domain: ofunk.org
 layout:
 - go.kubebuilder.io/v4
 plugins:
@@ -15,8 +15,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: funk.fhnw.ch
-  group: checks
+  domain: ofunk.org
+  group: orakel
   kind: WorkloadHardeningCheck
   path: github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1
   version: v1alpha1
@@ -28,8 +28,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: funk.fhnw.ch
-  group: checks
+  domain: ofunk.org
+  group: orakel
   kind: NamespaceHardeningCheck
   path: github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1
   version: v1alpha1

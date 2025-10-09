@@ -41,7 +41,7 @@ annotations:
       description: Creates WorkloadHardeningChecks for all workloads in a namespace to recommend a secure and functional security context.
   artifacthub.io/crdsExamples: |
     - kind: WorkloadHardeningCheck
-      apiVersion: checks.funk.fhnw.ch/v1alpha1
+      apiVersion: orakel.ofunk.org/v1alpha1
       metadata:
         name: example-workload-hardening-check
         namespace: default
@@ -54,7 +54,7 @@ annotations:
         runMode: paralell
         suffix: optional-suffix
     - kind: NamespaceHardeningCheck
-      apiVersion: checks.funk.fhnw.ch/v1alpha1
+      apiVersion: orakel.ofunk.org/v1alpha1
       metadata:
         name: example-namespace-hardening-check
       spec:

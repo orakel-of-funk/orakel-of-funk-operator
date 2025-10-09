@@ -1,4 +1,4 @@
-apiVersion: checks.funk.fhnw.ch/v1alpha1
+apiVersion: orakel.ofunk.org/v1alpha1
 kind: WorkloadHardeningCheck
 metadata:
   labels:

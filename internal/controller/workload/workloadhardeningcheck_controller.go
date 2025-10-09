@@ -40,9 +40,9 @@ type WorkloadHardeningCheckReconciler struct {
 // Required to convert "user" to "User", strings.ToTitle converts each rune to title case not just the first one
 var titleCase = cases.Title(language.English)
 
-// +kubebuilder:rbac:groups=checks.funk.fhnw.ch,resources=workloadhardeningchecks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=checks.funk.fhnw.ch,resources=workloadhardeningchecks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=checks.funk.fhnw.ch,resources=workloadhardeningchecks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=orakel.ofunk.org,resources=workloadhardeningchecks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=orakel.ofunk.org,resources=workloadhardeningchecks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=orakel.ofunk.org,resources=workloadhardeningchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=*,resources=*,verbs=*
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to

@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: workloadhardeningchecks.checks.funk.fhnw.ch
+  name: workloadhardeningchecks.orakel.ofunk.org
 spec:
-  group: checks.funk.fhnw.ch
+  group: orakel.ofunk.org
   names:
     kind: WorkloadHardeningCheck
     listKind: WorkloadHardeningCheckList

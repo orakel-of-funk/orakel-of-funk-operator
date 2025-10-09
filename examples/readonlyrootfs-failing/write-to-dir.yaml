@@ -88,7 +88,7 @@ spec:
             name: write-fs
             defaultMode: 0777
 ---
-apiVersion: checks.funk.fhnw.ch/v1alpha1
+apiVersion: orakel.ofunk.org/v1alpha1
 kind: WorkloadHardeningCheck
 metadata:
   name: write-fs

@@ -28,7 +28,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# funk.fhnw.ch/orakel-of-funk-bundle:$VERSION and funk.fhnw.ch/orakel-of-funk-catalog:$VERSION.
+# ofunk.org/orakel-of-funk-bundle:$VERSION and ofunk.org/orakel-of-funk-catalog:$VERSION.
 IMAGE_TAG_BASE ?= ghcr.io/orakel-of-funk/orakel-of-funk-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
@@ -356,8 +356,8 @@ proxy-valkey: ## Proxy the valkey server to localhost, to start the controller l
 helm-copy-crds: ## Copy CRDs to helm charts
 	@echo "Updating CRDs in Helm chart"
 	mkdir -p charts/orakel-of-funk/crds
-	cp config/crd/bases/checks.funk.fhnw.ch_namespacehardeningchecks.yaml deploy/charts/orakel-of-funk/crds/namespacehardeningchecks.checks.funk.fhnw.ch.yaml
-	cp config/crd/bases/checks.funk.fhnw.ch_workloadhardeningchecks.yaml deploy/charts/orakel-of-funk/crds/workloadhardeningcheck.checks.funk.fhnw.ch.yaml
+	cp config/crd/bases/orakel.ofunk.org_namespacehardeningchecks.yaml deploy/charts/orakel-of-funk/crds/namespacehardeningchecks.orakel.ofunk.org.yaml
+	cp config/crd/bases/orakel.ofunk.org_workloadhardeningchecks.yaml deploy/charts/orakel-of-funk/crds/workloadhardeningcheck.orakel.ofunk.org.yaml
 
 .PHONY: helm-lint
 helm-lint: ## Lint Helm chart

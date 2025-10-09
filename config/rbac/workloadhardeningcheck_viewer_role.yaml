@@ -8,7 +8,7 @@ metadata:
   name: workloadhardeningcheck-viewer-role
 rules:
 - apiGroups:
-  - checks.funk.fhnw.ch
+  - orakel.ofunk.org
   resources:
   - workloadhardeningchecks
   verbs:
@@ -16,7 +16,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - checks.funk.fhnw.ch
+  - orakel.ofunk.org
   resources:
   - workloadhardeningchecks/status
   verbs:

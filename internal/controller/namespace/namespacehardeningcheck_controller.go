@@ -36,9 +36,9 @@ type NamespaceHardeningCheckReconciler struct {
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=checks.funk.fhnw.ch,resources=namespacehardeningchecks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=checks.funk.fhnw.ch,resources=namespacehardeningchecks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=checks.funk.fhnw.ch,resources=namespacehardeningchecks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=orakel.ofunk.org,resources=namespacehardeningchecks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=orakel.ofunk.org,resources=namespacehardeningchecks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=orakel.ofunk.org,resources=namespacehardeningchecks/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

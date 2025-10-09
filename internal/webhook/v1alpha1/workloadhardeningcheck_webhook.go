@@ -27,7 +27,7 @@ func SetupWorkloadHardeningCheckWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/mutate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck,mutating=true,failurePolicy=fail,sideEffects=None,groups=checks.funk.fhnw.ch,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=mworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck,mutating=true,failurePolicy=fail,sideEffects=None,groups=orakel.ofunk.org,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=mworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
 
 // WorkloadHardeningCheckCustomDefaulter struct is responsible for setting default values on the custom resource of the
 // Kind WorkloadHardeningCheck when those are created or updated.
@@ -64,7 +64,7 @@ func (d *WorkloadHardeningCheckCustomDefaulter) Default(ctx context.Context, obj
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
 // Modifying the path for an invalid path can cause API server errors; failing to locate the webhook.
 
-// +kubebuilder:webhook:path=/validate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck,mutating=false,failurePolicy=fail,sideEffects=None,groups=checks.funk.fhnw.ch,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=vworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck,mutating=false,failurePolicy=fail,sideEffects=None,groups=orakel.ofunk.org,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=vworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
 
 // WorkloadHardeningCheckCustomValidator struct is responsible for validating the custom resource of the
 // Kind WorkloadHardeningCheck when those are created or updated.

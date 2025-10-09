@@ -25,7 +25,7 @@ webhooks:
   name: mnamespacehardeningcheck-v1alpha1.kb.io
   rules:
   - apiGroups:
-    - checks.funk.fhnw.ch
+    - orakel.ofunk.org
     apiVersions:
     - v1alpha1
     operations:
@@ -45,7 +45,7 @@ webhooks:
   name: mworkloadhardeningcheck-v1alpha1.kb.io
   rules:
   - apiGroups:
-    - checks.funk.fhnw.ch
+    - orakel.ofunk.org
     apiVersions:
     - v1alpha1
     operations:

@@ -1,7 +1,7 @@
 # This rule is not used by the project orakel-of-funk itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to checks.funk.fhnw.ch resources.
+# Grants read-only access to orakel.ofunk.org resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 
@@ -14,7 +14,7 @@ metadata:
   name: namespacehardeningcheck-viewer-role
 rules:
 - apiGroups:
-  - checks.funk.fhnw.ch
+  - orakel.ofunk.org
   resources:
   - namespacehardeningchecks
   verbs:
@@ -22,7 +22,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - checks.funk.fhnw.ch
+  - orakel.ofunk.org
   resources:
   - namespacehardeningchecks/status
   verbs:

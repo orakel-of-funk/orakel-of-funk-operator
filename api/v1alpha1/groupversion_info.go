@@ -1,6 +1,6 @@
 // Package v1alpha1 contains API Schema definitions for the checks v1alpha1 API group
 // +kubebuilder:object:generate=true
-// +groupName=checks.funk.fhnw.ch
+// +groupName=orakel.ofunk.org
 package v1alpha1
 
 import (
@@ -10,7 +10,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects
-	GroupVersion = schema.GroupVersion{Group: "checks.funk.fhnw.ch", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "orakel.ofunk.org", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
