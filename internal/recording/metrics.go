@@ -39,12 +39,6 @@ var (
 	podMetricsLastUpdate = time.Time{}
 )
 
-func init() {
-	clientConfig := config.GetConfigOrDie()
-	restClient, _ = rest.HTTPClientFor(clientConfig)
-	apiHost = clientConfig.Host
-}
-
 type PodError struct {
 	message string
 	Pod     corev1.Pod
@@ -60,6 +54,12 @@ type MetricsRecorder struct {
 }
 
 func NewMetricsRecorder(ctx context.Context, ksClient client.Client) *MetricsRecorder {
+	if apiHost == "" || restClient == nil {
+		clientConfig := config.GetConfigOrDie()
+		restClient, _ = rest.HTTPClientFor(clientConfig)
+		apiHost = clientConfig.Host
+	}
+
 	if k8sClient == nil {
 		k8sClient = ksClient
 	}
