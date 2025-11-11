@@ -231,6 +231,12 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: duration / 2}, nil
 	}
 
+	// The validation webhook already ensures that the BaselineRecordingReference exists during creation, so we simply update the status here
+	if workloadHardening.Spec.BaselineRecordingReference != nil && *workloadHardening.Spec.BaselineRecordingReference != "" {
+		logger.Info("Using existing baseline recording from ValKey", "reference", *workloadHardening.Spec.BaselineRecordingReference)
+		checkManager.SetBaselineRecorded(ctx)
+	}
+
 	if !checkManager.BaselineRecorded() {
 		logger.Info("Baseline not recorded yet. Starting baseline recording")
 		return r.recordBaseline(ctx, workloadHardening, checkManager)

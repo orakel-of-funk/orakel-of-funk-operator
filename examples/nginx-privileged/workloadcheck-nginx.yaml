@@ -8,3 +8,4 @@ spec:
     kind: Deployment
     name: nginx-privileged
   recordingDuration: 1m
+  baselineRecordingReference: "oof-nginx-privileged:c5r289c6:baseline"

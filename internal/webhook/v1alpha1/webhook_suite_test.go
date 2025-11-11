@@ -93,7 +93,7 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	err = SetupWorkloadHardeningCheckWebhookWithManager(mgr)
+	err = SetupWorkloadHardeningCheckWebhookWithManager(mgr, nil)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = SetupNamespaceHardeningCheckWebhookWithManager(mgr)

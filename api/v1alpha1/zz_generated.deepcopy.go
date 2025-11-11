@@ -421,6 +421,11 @@ func (in *WorkloadHardeningCheckList) DeepCopyObject() runtime.Object {
 func (in *WorkloadHardeningCheckSpec) DeepCopyInto(out *WorkloadHardeningCheckSpec) {
 	*out = *in
 	out.TargetRef = in.TargetRef
+	if in.BaselineRecordingReference != nil {
+		in, out := &in.BaselineRecordingReference, &out.BaselineRecordingReference
+		*out = new(string)
+		**out = **in
+	}
 	if in.SecurityContext != nil {
 		in, out := &in.SecurityContext, &out.SecurityContext
 		*out = new(SecurityContextDefaults)

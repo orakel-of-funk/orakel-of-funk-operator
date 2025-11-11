@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/workload"
 )
 
@@ -20,14 +21,14 @@ import (
 var workloadhardeningchecklog = logf.Log.WithName("workloadhardeningcheck-resource")
 
 // SetupWorkloadHardeningCheckWebhookWithManager registers the webhook for WorkloadHardeningCheck in the manager.
-func SetupWorkloadHardeningCheckWebhookWithManager(mgr ctrl.Manager) error {
+func SetupWorkloadHardeningCheckWebhookWithManager(mgr ctrl.Manager, valkeyClient *valkey.ValkeyClient) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&checksv1alpha1.WorkloadHardeningCheck{}).
 		WithDefaulter(&WorkloadHardeningCheckCustomDefaulter{}).
-		WithValidator(&WorkloadHardeningCheckCustomValidator{}).
+		WithValidator(&WorkloadHardeningCheckCustomValidator{ValKeyClient: valkeyClient}).
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/mutate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck,mutating=true,failurePolicy=fail,sideEffects=None,groups=orakel.ofunk.org,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=mworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-orakel-ofunk-org-v1alpha1-workloadhardeningcheck,mutating=true,failurePolicy=fail,sideEffects=None,groups=orakel.ofunk.org,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=mworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
 
 // WorkloadHardeningCheckCustomDefaulter struct is responsible for setting default values on the custom resource of the
 // Kind WorkloadHardeningCheck when those are created or updated.
@@ -64,7 +65,7 @@ func (d *WorkloadHardeningCheckCustomDefaulter) Default(ctx context.Context, obj
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
 // Modifying the path for an invalid path can cause API server errors; failing to locate the webhook.
 
-// +kubebuilder:webhook:path=/validate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck,mutating=false,failurePolicy=fail,sideEffects=None,groups=orakel.ofunk.org,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=vworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-orakel-ofunk-org-v1alpha1-workloadhardeningcheck,mutating=false,failurePolicy=fail,sideEffects=None,groups=orakel.ofunk.org,resources=workloadhardeningchecks,verbs=create;update,versions=v1alpha1,name=vworkloadhardeningcheck-v1alpha1.kb.io,admissionReviewVersions=v1
 
 // WorkloadHardeningCheckCustomValidator struct is responsible for validating the custom resource of the
 // Kind WorkloadHardeningCheck when those are created or updated.
@@ -73,6 +74,7 @@ func (d *WorkloadHardeningCheckCustomDefaulter) Default(ctx context.Context, obj
 // as it is used only for temporary operations and does not need to be deeply copied.
 type WorkloadHardeningCheckCustomValidator struct {
 	// TODO(user): Add more fields as needed for validation
+	ValKeyClient *valkey.ValkeyClient
 }
 
 var _ webhook.CustomValidator = &WorkloadHardeningCheckCustomValidator{}
@@ -92,8 +94,8 @@ func (v *WorkloadHardeningCheckCustomValidator) ValidateCreate(ctx context.Conte
 		return nil, fmt.Errorf("suffix must be set during creation of WorkloadHardeningCheck")
 	}
 
-	// ValKeyClient is not used in this validation, so we pass nil
-	workloadManager := workload.NewWorkloadCheckManager(ctx, nil, workloadhardeningcheck)
+	// ValKeyClient is not used in this validation, we could also pass nil here
+	workloadManager := workload.NewWorkloadCheckManager(ctx, v.ValKeyClient, workloadhardeningcheck)
 	if workloadManager == nil {
 		workloadhardeningchecklog.Error(fmt.Errorf("failed to create workload manager"), "WorkloadHandler creation failed")
 		return nil, fmt.Errorf("failed to create workload manager for WorkloadHardeningCheck")
@@ -106,6 +108,20 @@ func (v *WorkloadHardeningCheckCustomValidator) ValidateCreate(ctx context.Conte
 	} else if !running {
 		workloadhardeningchecklog.Info("Target workload is not running", "name", workloadhardeningcheck.GetName())
 		return nil, fmt.Errorf("target workload %s/%s is not running", workloadhardeningcheck.GetNamespace(), workloadhardeningcheck.Spec.TargetRef.Name)
+	}
+
+	// Verify that the baseline recording exists in ValKey
+	if workloadhardeningcheck.Spec.BaselineRecordingReference != nil && *workloadhardeningcheck.Spec.BaselineRecordingReference != "" {
+		if _, err := v.ValKeyClient.GetRecording(ctx, *workloadhardeningcheck.Spec.BaselineRecordingReference); err != nil {
+			workloadhardeningchecklog.Error(err, "Failed to get baseline recording from ValKey", "name", workloadhardeningcheck.GetName(), "recording", *workloadhardeningcheck.Spec.BaselineRecordingReference)
+			return nil, fmt.Errorf("failed to get baseline recording %s from ValKey: %w", *workloadhardeningcheck.Spec.BaselineRecordingReference, err)
+		}
+
+		if _, err := v.ValKeyClient.GetRecording(ctx, *workloadhardeningcheck.Spec.BaselineRecordingReference+"-2"); err != nil {
+			workloadhardeningchecklog.Error(err, "Failed to get baseline recording from ValKey", "name", workloadhardeningcheck.GetName(), "recording", *workloadhardeningcheck.Spec.BaselineRecordingReference+"-2")
+			return nil, fmt.Errorf("failed to get baseline recording %s from ValKey: %w", *workloadhardeningcheck.Spec.BaselineRecordingReference+"-2", err)
+		}
+
 	}
 
 	workloadhardeningchecklog.Info("WorkloadHardeningCheck creation validation passed", "name", workloadhardeningcheck.GetName())
@@ -134,6 +150,11 @@ func (v *WorkloadHardeningCheckCustomValidator) ValidateUpdate(ctx context.Conte
 	if oldWorkloadhardeningcheck.Spec.TargetRef.Name != newWorkloadhardeningcheck.Spec.TargetRef.Name || oldWorkloadhardeningcheck.Spec.TargetRef.Kind != newWorkloadhardeningcheck.Spec.TargetRef.Kind {
 		workloadhardeningchecklog.Info("TargetRef cannot be changed during update", "oldTargetRef", oldWorkloadhardeningcheck.Spec.TargetRef, "newTargetRef", newWorkloadhardeningcheck.Spec.TargetRef)
 		return nil, fmt.Errorf("targetRef cannot be changed during update of WorkloadHardeningCheck")
+	}
+
+	if oldWorkloadhardeningcheck.Spec.BaselineRecordingReference != newWorkloadhardeningcheck.Spec.BaselineRecordingReference {
+		workloadhardeningchecklog.Info("BaselineRecordingReference cannot be changed during update", "oldBaselineRecordingReference", oldWorkloadhardeningcheck.Spec.BaselineRecordingReference, "newBaselineRecordingReference", newWorkloadhardeningcheck.Spec.BaselineRecordingReference)
+		return nil, fmt.Errorf("baselineRecordingReference cannot be changed during update of WorkloadHardeningCheck")
 	}
 
 	workloadhardeningchecklog.Info("WorkloadHardeningCheck update validation passed", "name", newWorkloadhardeningcheck.GetName())

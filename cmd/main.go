@@ -225,7 +225,7 @@ func main() {
 	}
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = webhookv1alpha1.SetupWorkloadHardeningCheckWebhookWithManager(mgr); err != nil {
+		if err = webhookv1alpha1.SetupWorkloadHardeningCheckWebhookWithManager(mgr, valKeyClient); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "WorkloadHardeningCheck")
 			os.Exit(1)
 		}

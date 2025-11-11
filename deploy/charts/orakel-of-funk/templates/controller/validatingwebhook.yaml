@@ -20,7 +20,7 @@ webhooks:
     service:
       name: webhook-{{ include "orakel-of-funk.fullname" . }}
       namespace: {{ include "orakel-of-funk.namespace" . }}
-      path: /validate-checks-funk-fhnw-ch-v1alpha1-namespacehardeningcheck
+      path: /validate-orakel-ofunk-org-v1alpha1-namespacehardeningcheck
   failurePolicy: Fail
   name: vnamespacehardeningcheck-v1alpha1.kb.io
   rules:
@@ -40,7 +40,7 @@ webhooks:
     service:
       name: webhook-{{ include "orakel-of-funk.fullname" . }}
       namespace: {{ include "orakel-of-funk.namespace" . }}
-      path: /validate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck
+      path: /validate-orakel-ofunk-org-v1alpha1-workloadhardeningcheck
   failurePolicy: Fail
   name: vworkloadhardeningcheck-v1alpha1.kb.io
   rules:

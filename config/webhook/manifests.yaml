@@ -10,7 +10,7 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-checks-funk-fhnw-ch-v1alpha1-namespacehardeningcheck
+      path: /mutate-orakel-ofunk-org-v1alpha1-namespacehardeningcheck
   failurePolicy: Fail
   name: mnamespacehardeningcheck-v1alpha1.kb.io
   rules:
@@ -30,7 +30,7 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck
+      path: /mutate-orakel-ofunk-org-v1alpha1-workloadhardeningcheck
   failurePolicy: Fail
   name: mworkloadhardeningcheck-v1alpha1.kb.io
   rules:
@@ -56,7 +56,7 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-checks-funk-fhnw-ch-v1alpha1-namespacehardeningcheck
+      path: /validate-orakel-ofunk-org-v1alpha1-namespacehardeningcheck
   failurePolicy: Fail
   name: vnamespacehardeningcheck-v1alpha1.kb.io
   rules:
@@ -76,7 +76,7 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-checks-funk-fhnw-ch-v1alpha1-workloadhardeningcheck
+      path: /validate-orakel-ofunk-org-v1alpha1-workloadhardeningcheck
   failurePolicy: Fail
   name: vworkloadhardeningcheck-v1alpha1.kb.io
   rules:
