@@ -19,6 +19,12 @@ type WorkloadHardeningCheckSpec struct {
 	// +kubebuilder:validation:Required
 	TargetRef TargetReference `json:"targetRef"`
 
+	// BaselineRecordingReference specifies an optional reference to an existing baseline recording.
+	// It is expected to be a ValKey entry, e.g., "namespace:baseline-recording-name" that points to a previously created baseline recording.
+	// If not provided, a new baseline recording will be created.
+	// +kubebuilder:validation:Optional
+	BaselineRecordingReference *string `json:"baselineRecordingReference,omitempty"`
+
 	// RecordingDuration specifies how long to observe the baseline workload before applying hardening tests.
 	// +kubebuilder:validation:Pattern=`^\d+[smh]$`
 	// +kubebuilder:default="5m"
@@ -214,6 +220,7 @@ const (
 	ReasonBaselineRecording         = "BaselineRecording"
 	ReasonBaselineRecordingFailed   = "BaselineRecordingFailed"
 	ReasonBaselineRecordingFinished = "BaselineRecordingFinished"
+	ReasonBaselineRecordingNotFound = "BaselineRecordingNotFound"
 
 	// single check, prefixed with the check name
 	ReasonCheckRecording         = "CheckRecording"

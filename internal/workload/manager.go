@@ -253,10 +253,23 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 	logOraclePerContainer := make(map[string]*orakel.LogOrakel)
 	metricsOracle := orakel.NewMetricsOrakel()
 
+	baselineRecordings := []string{
+		fmt.Sprintf("%s:%s:%s", m.workloadHardeningCheck.Namespace, m.workloadHardeningCheck.Spec.Suffix, "baseline"),
+		fmt.Sprintf("%s:%s:%s", m.workloadHardeningCheck.Namespace, m.workloadHardeningCheck.Spec.Suffix, "baseline-2"),
+	}
+
+	// Use custom baseline recording if specified, we assume that the existance of this was already validated
+	if m.workloadHardeningCheck.Spec.BaselineRecordingReference != nil && *m.workloadHardeningCheck.Spec.BaselineRecordingReference != "" {
+		baselineRecordings = []string{
+			*m.workloadHardeningCheck.Spec.BaselineRecordingReference,
+			*m.workloadHardeningCheck.Spec.BaselineRecordingReference + "-2",
+		}
+	}
+
 	// Record baseline for both baseline recordings
-	for _, baseline := range []string{"baseline", "baseline-2"} {
+	for _, baseline := range baselineRecordings {
 		// Get results from the workload hardening check from ValKey
-		baselineRecording, err := m.valKeyClient.GetRecording(ctx, fmt.Sprintf("%s:%s:%s", m.workloadHardeningCheck.Namespace, m.workloadHardeningCheck.Spec.Suffix, baseline))
+		baselineRecording, err := m.valKeyClient.GetRecording(ctx, baseline)
 		if err != nil {
 			m.logger.Error(err, "Failed to get baseline recording from ValKey")
 			return fmt.Errorf("failed to get baseline recording from ValKey: %w", err)
@@ -511,4 +524,49 @@ func (m *WorkloadCheckManager) GetCheckDuration() time.Duration {
 	}
 
 	return duration
+}
+
+func (m *WorkloadCheckManager) SetBaselineRecorded(ctx context.Context) error {
+	// Set the BaselineRecorded condition to True
+	err := m.SetCondition(ctx, metav1.Condition{
+		Type:    checksv1alpha1.ConditionTypeBaseline,
+		Status:  metav1.ConditionTrue,
+		Reason:  checksv1alpha1.ReasonBaselineRecordingFinished,
+		Message: "Baseline recording has been finished",
+	})
+
+	if err != nil {
+		m.logger.Error(err, "Failed to set BaselineRecorded condition")
+		return fmt.Errorf("failed to set BaselineRecorded condition: %w", err)
+	}
+
+	baselineRuns := []*checksv1alpha1.CheckRun{
+		{
+			Name:                 "baseline",
+			RecordingSuccessfull: ptr.To(true),
+			CheckSuccessfull:     ptr.To(true),
+		},
+		{
+			Name:                 "baseline-2",
+			RecordingSuccessfull: ptr.To(true),
+			CheckSuccessfull:     ptr.To(true),
+		},
+	}
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Let's re-fetch the workload hardening check Custom Resource after updating the status so that we have the latest state
+		if err := m.Get(ctx, types.NamespacedName{Name: m.workloadHardeningCheck.Name, Namespace: m.workloadHardeningCheck.Namespace}, m.workloadHardeningCheck); err != nil {
+			if apierrors.IsNotFound(err) {
+				// workloadHardeningCheck resource was deleted, while a check was running
+				m.logger.Info("WorkloadHardeningCheck not found, skipping status update")
+				return nil // If the resource is not found, we can skip the update
+			}
+			m.logger.Error(err, "Failed to re-fetch WorkloadHardeningCheck")
+		}
+
+		m.workloadHardeningCheck.Status.BaselineRuns = baselineRuns
+
+		return m.Status().Update(ctx, m.workloadHardeningCheck)
+
+	})
 }

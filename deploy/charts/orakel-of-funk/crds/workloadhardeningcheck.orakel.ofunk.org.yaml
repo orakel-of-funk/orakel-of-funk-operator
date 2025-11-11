@@ -53,6 +53,13 @@ spec:
           spec:
             description: WorkloadHardeningCheckSpec defines the desired state of WorkloadHardeningCheck
             properties:
+              baselineRecordingReference:
+                description: |-
+                  BaselineRecordingReference specifies an optional reference to an existing baseline recording.
+                  It is expected to be a ValKey entry, e.g., "namespace:baseline-recording-name" that points to a previously created baseline recording.
+                  If not provided, a new baseline recording will be created.
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?:[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
               recordingDuration:
                 default: 5m
                 description: RecordingDuration specifies how long to observe the baseline

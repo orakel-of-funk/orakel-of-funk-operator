@@ -21,18 +21,30 @@ var discoveryClient *discovery.DiscoveryClient
 var namespacedResources []*v1.APIResourceList
 
 var resourcesToSkip = []string{
+	"binding",
 	"bindings",
+	"localsubjectaccessreview",
 	"localsubjectaccessreviews",
+	"endpointslice",
 	"endpointslices",
+	"endpoint",
 	"endpoints",
+	"event",
 	"events",
+	"ingress",
 	"ingresses",
+	"httproute",
 	"httproutes",
+	"gateway",
 	"gateways",
+	"podmetric",
 	"podmetrics",
+	"controllerrevision",
 	"controllerrevisions",
 	// exclude our own resource to avoid infinite loops
+	"workloadhardeningcheck",
 	"workloadhardeningchecks",
+	"namespacehardeningcheck",
 	"namespacehardeningchecks",
 }
 
