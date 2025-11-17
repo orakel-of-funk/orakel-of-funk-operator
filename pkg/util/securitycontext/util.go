@@ -1,4 +1,4 @@
-package workload
+package securitycontext
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 )
 
-func mergePodSecurityContexts(ctx context.Context, base, extends *corev1.PodSecurityContext) *corev1.PodSecurityContext {
+func MergePodSecurityContexts(ctx context.Context, base, extends *corev1.PodSecurityContext) *corev1.PodSecurityContext {
 	log := logf.FromContext(ctx)
 
 	if base == nil {
@@ -64,7 +64,7 @@ func mergePodSecurityContexts(ctx context.Context, base, extends *corev1.PodSecu
 	return merged
 }
 
-func mergeContainerSecurityContexts(ctx context.Context, base, extends *corev1.SecurityContext) *corev1.SecurityContext {
+func MergeContainerSecurityContexts(ctx context.Context, base, extends *corev1.SecurityContext) *corev1.SecurityContext {
 	log := logf.FromContext(ctx)
 
 	if base == nil {
@@ -146,25 +146,25 @@ func ApplyCheckSecurityContext(ctx context.Context, workloadUnderTest *client.Ob
 	}
 
 	if podSpecTemplate != nil {
-		applySecurityContext(ctx, podSpecTemplate, containerSecurityContext, podSecurityContext)
+		ApplySecurityContextToPodSpec(ctx, podSpecTemplate, containerSecurityContext, podSecurityContext)
 		return nil
 	}
 
 	return fmt.Errorf("kind of workloadUnderTest not supported")
 }
 
-func applySecurityContext(ctx context.Context, podSpec *corev1.PodSpec, containerSecurityContext *checksv1alpha1.ContainerSecurityContextDefaults, podSecurityContext *checksv1alpha1.PodSecurityContextDefaults) {
+func ApplySecurityContextToPodSpec(ctx context.Context, podSpec *corev1.PodSpec, containerSecurityContext *checksv1alpha1.ContainerSecurityContextDefaults, podSecurityContext *checksv1alpha1.PodSecurityContextDefaults) {
 	if podSpec.SecurityContext == nil {
 		podSpec.SecurityContext = podSecurityContext.ToK8sSecurityContext()
 	} else {
-		podSpec.SecurityContext = mergePodSecurityContexts(ctx, podSpec.SecurityContext, podSecurityContext.ToK8sSecurityContext())
+		podSpec.SecurityContext = MergePodSecurityContexts(ctx, podSpec.SecurityContext, podSecurityContext.ToK8sSecurityContext())
 	}
 
 	for i := range podSpec.Containers {
 		if podSpec.Containers[i].SecurityContext == nil {
 			podSpec.Containers[i].SecurityContext = containerSecurityContext.ToK8sSecurityContext()
 		} else {
-			podSpec.Containers[i].SecurityContext = mergeContainerSecurityContexts(ctx, podSpec.Containers[i].SecurityContext, containerSecurityContext.ToK8sSecurityContext())
+			podSpec.Containers[i].SecurityContext = MergeContainerSecurityContexts(ctx, podSpec.Containers[i].SecurityContext, containerSecurityContext.ToK8sSecurityContext())
 		}
 	}
 
@@ -172,7 +172,7 @@ func applySecurityContext(ctx context.Context, podSpec *corev1.PodSpec, containe
 		if podSpec.InitContainers[i].SecurityContext == nil {
 			podSpec.InitContainers[i].SecurityContext = containerSecurityContext.ToK8sSecurityContext()
 		} else {
-			podSpec.InitContainers[i].SecurityContext = mergeContainerSecurityContexts(ctx, podSpec.InitContainers[i].SecurityContext, containerSecurityContext.ToK8sSecurityContext())
+			podSpec.InitContainers[i].SecurityContext = MergeContainerSecurityContexts(ctx, podSpec.InitContainers[i].SecurityContext, containerSecurityContext.ToK8sSecurityContext())
 		}
 	}
 }
@@ -193,14 +193,14 @@ func ApplySecurityContext(ctx context.Context, workloadUnderTest *client.Object,
 		if podSpecTemplate.SecurityContext == nil {
 			podSpecTemplate.SecurityContext = podSecurityContext
 		} else {
-			podSpecTemplate.SecurityContext = mergePodSecurityContexts(ctx, podSpecTemplate.SecurityContext, podSecurityContext)
+			podSpecTemplate.SecurityContext = MergePodSecurityContexts(ctx, podSpecTemplate.SecurityContext, podSecurityContext)
 		}
 
 		for i := range podSpecTemplate.Containers {
 			if podSpecTemplate.Containers[i].SecurityContext == nil {
 				podSpecTemplate.Containers[i].SecurityContext = containerSecurityContext
 			} else {
-				podSpecTemplate.Containers[i].SecurityContext = mergeContainerSecurityContexts(ctx, podSpecTemplate.Containers[i].SecurityContext, containerSecurityContext)
+				podSpecTemplate.Containers[i].SecurityContext = MergeContainerSecurityContexts(ctx, podSpecTemplate.Containers[i].SecurityContext, containerSecurityContext)
 			}
 		}
 
@@ -208,7 +208,7 @@ func ApplySecurityContext(ctx context.Context, workloadUnderTest *client.Object,
 			if podSpecTemplate.InitContainers[i].SecurityContext == nil {
 				podSpecTemplate.InitContainers[i].SecurityContext = containerSecurityContext
 			} else {
-				podSpecTemplate.InitContainers[i].SecurityContext = mergeContainerSecurityContexts(ctx, podSpecTemplate.InitContainers[i].SecurityContext, containerSecurityContext)
+				podSpecTemplate.InitContainers[i].SecurityContext = MergeContainerSecurityContexts(ctx, podSpecTemplate.InitContainers[i].SecurityContext, containerSecurityContext)
 			}
 		}
 		return nil

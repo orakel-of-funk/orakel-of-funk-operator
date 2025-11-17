@@ -26,7 +26,8 @@ import (
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
-	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/workload"
+	securitycontextUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/securitycontext"
+	workloadUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/workload"
 )
 
 // NamespaceHardeningCheckReconciler reconciles a NamespaceHardeningCheck object
@@ -112,7 +113,7 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 		})
 	}
 
-	topLevelResources := r.getTopLevelResourcesToCheck(ctx, namespaceHardening)
+	topLevelResources := namespace.GetSupportedWorkloadResources(ctx, namespaceHardening.Spec.TargetNamespace)
 
 	// Filter topLevelResoruces for those compatible with WorkloadHardeningCheck
 	if len(topLevelResources) == 0 {
@@ -128,6 +129,7 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	workloadChecks := []*checksv1alpha1.WorkloadHardeningCheck{}
+	// ToDo: Around here somewhere, we should record the baseline for each workload, and only if that finished successfully, we create the WorkloadHardeningCheck, and inject the BaselineRecordingReference into it
 	for _, resource := range topLevelResources {
 		logger.Info("Found top-level resource to check", "kind", resource.GetKind(), "name", resource.GetName(), "namespace", namespaceHardening.Spec.TargetNamespace)
 		// Create a WorkloadHardeningCheck for each top-level resource
@@ -297,7 +299,7 @@ func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Cont
 
 	// Apply securityContext from recommendations to all relevant resources
 	for _, resource := range topLevelResources {
-		if workload.IsSupportedUnstructured(resource) {
+		if workloadUtil.IsSupportedUnstructured(resource) {
 			workloadUnderTest, err := r.GetWorkloadUnderTest(ctx, resource)
 			if err != nil {
 				logger.Error(err, "Failed to get workload under test for final check", "kind", resource.GetKind(), "name", resource.GetName())
@@ -305,10 +307,10 @@ func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Cont
 			}
 			// Apply security context from recommendations if available
 			if recommendation, ok := namespaceHardening.Status.Recommendations[resource.GetKind()+"/"+resource.GetName()]; ok {
-				workload.ApplySecurityContext(ctx, workloadUnderTest, recommendation.ContainerSecurityContexts, recommendation.PodSecurityContext)
+				securitycontextUtil.ApplySecurityContext(ctx, workloadUnderTest, recommendation.ContainerSecurityContexts, recommendation.PodSecurityContext)
 
 				r.Update(ctx, *workloadUnderTest)
-				for updated := false; !updated; updated, _ = workload.VerifyUpdated(*workloadUnderTest) {
+				for updated := false; !updated; updated, _ = workloadUtil.VerifyUpdated(*workloadUnderTest) {
 					logger.Info("Waiting for workload to be updated with security context", "kind", resource.GetKind(), "name", resource.GetName())
 					time.Sleep(5 * time.Second)
 					r.Get(ctx, types.NamespacedName{Namespace: (*workloadUnderTest).GetNamespace(), Name: (*workloadUnderTest).GetName()}, *workloadUnderTest)
@@ -325,14 +327,14 @@ func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Cont
 	success := true
 Resources:
 	for _, resource := range topLevelResources {
-		if workload.IsSupportedUnstructured(resource) {
+		if workloadUtil.IsSupportedUnstructured(resource) {
 			workloadUnderTest, err := r.GetWorkloadUnderTest(ctx, resource)
 			if err != nil {
 				logger.Error(err, "Failed to get workload under test for final check", "kind", resource.GetKind(), "name", resource.GetName())
 				continue // Skip this resource if we can't get the workload
 			}
 
-			for running := false; !running; running, _ = workload.VerifyReadiness(workloadUnderTest, r.Client) {
+			for running := false; !running; running, _ = workloadUtil.VerifyReadiness(workloadUnderTest, r.Client) {
 				logger.Info("Waiting for workload to be running after security context update", "kind", resource.GetKind(), "name", resource.GetName())
 				time.Sleep(5 * time.Second)
 				r.Get(ctx, types.NamespacedName{Namespace: (*workloadUnderTest).GetNamespace(), Name: (*workloadUnderTest).GetName()}, *workloadUnderTest)
@@ -363,7 +365,7 @@ Resources:
 func (r *NamespaceHardeningCheckReconciler) GetWorkloadUnderTest(ctx context.Context, resource *unstructured.Unstructured) (*client.Object, error) {
 	logger := logf.FromContext(ctx).WithName("GetWorkloadUnderTest")
 
-	if !workload.IsSupportedUnstructured(resource) {
+	if !workloadUtil.IsSupportedUnstructured(resource) {
 		logger.Error(nil, "Unsupported resource kind for workload under test", "kind", resource.GetKind(), "name", resource.GetName())
 		return nil, fmt.Errorf("unsupported resource kind: %s", resource.GetKind())
 	}
@@ -446,32 +448,6 @@ func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx con
 	logger.Info("Created WorkloadHardeningCheck", "workload", workloadCheck.Spec.TargetRef.Name, "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
 
 	return workloadCheck, nil
-}
-
-func (r *NamespaceHardeningCheckReconciler) getTopLevelResourcesToCheck(ctx context.Context, namespaceHardeningCheck *checksv1alpha1.NamespaceHardeningCheck) []*unstructured.Unstructured {
-	logger := logf.FromContext(ctx).WithName("getTopLevelResourcesToCheck")
-
-	// Fetch all top-level resources in the target namespace
-	allTopLevelResources := namespace.GetTopLevelResources(ctx, namespaceHardeningCheck.Spec.TargetNamespace)
-
-	if len(allTopLevelResources) == 0 {
-		logger.Info("No top-level resources found in target namespace", "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
-		return []*unstructured.Unstructured{}
-	}
-
-	// Filter for resources that are compatible with WorkloadHardeningCheck,
-	// Currently supported are:
-	// - Deployments
-	// - StatefulSets
-	// - DaemonSets
-	usableResources := []*unstructured.Unstructured{}
-	for _, resource := range allTopLevelResources {
-		if workload.IsSupportedUnstructured(resource) {
-			usableResources = append(usableResources, resource)
-		}
-	}
-
-	return usableResources
 }
 
 func (r *NamespaceHardeningCheckReconciler) SetCondition(ctx context.Context, namespaceHardeningCheck *checksv1alpha1.NamespaceHardeningCheck, condition metav1.Condition) error {

@@ -3,16 +3,13 @@ package workload
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-	appsv1 "k8s.io/api/apps/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -28,6 +25,8 @@ import (
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/checks"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/orakel"
+	securitycontextUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/securitycontext"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/workloadhardeningcheck"
 )
 
 var (
@@ -37,12 +36,11 @@ var (
 
 type WorkloadCheckManager struct {
 	client.Client
+	WorkloadHardeningCheck workloadhardeningcheck.WorkloadHardeningCheck
 
 	valKeyClient *valkey.ValkeyClient
 
 	logger logr.Logger
-
-	workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck
 
 	allChecks map[string]checks.CheckInterface
 }
@@ -72,179 +70,13 @@ func NewWorkloadCheckManager(ctx context.Context, valKeyClient *valkey.ValkeyCli
 	checkManager := &WorkloadCheckManager{
 		Client:                 cl,
 		logger:                 log,
-		workloadHardeningCheck: workloadHardeningCheck.DeepCopy(),
+		WorkloadHardeningCheck: workloadhardeningcheck.WorkloadHardeningCheck{Client: cl, WorkloadHardeningCheck: *workloadHardeningCheck.DeepCopy()},
 		valKeyClient:           valKeyClient,
 		allChecks:              checks.GetAllChecks(),
 	}
 
 	return checkManager
 
-}
-
-func (m *WorkloadCheckManager) refreshWorkloadHardeningCheck() {
-	if err := m.Get(context.Background(), types.NamespacedName{Name: m.workloadHardeningCheck.Name, Namespace: m.workloadHardeningCheck.Namespace}, m.workloadHardeningCheck); err != nil {
-		m.logger.Error(err, "Failed to re-fetch WorkloadHardeningCheck")
-	}
-}
-
-func (m *WorkloadCheckManager) GetReplicaCount(ctx context.Context, namespace string) (int32, error) {
-
-	workloadUnderTestPtr, err := m.GetWorkloadUnderTest(ctx, namespace)
-	if err != nil {
-		m.logger.Error(err, "failed to get workload under test")
-		return 0, fmt.Errorf("failed to get workload under test: %w", err)
-	}
-
-	switch v := (*workloadUnderTestPtr).(type) {
-	case *appsv1.Deployment:
-		if v.Spec.Replicas != nil {
-			return *v.Spec.Replicas, nil
-		}
-		return 1, nil // Default to 1 if not set
-	case *appsv1.StatefulSet:
-		if v.Spec.Replicas != nil {
-			return *v.Spec.Replicas, nil
-		}
-		return 1, nil // Default to 1 if not set
-	case *appsv1.DaemonSet:
-		return 0, fmt.Errorf("cannot scale DaemonSet")
-	default:
-		return 0, fmt.Errorf("unsupported workload kind: %T", v)
-	}
-}
-
-func (m *WorkloadCheckManager) ScaleWorkloadUnderTest(ctx context.Context, namespace string, replicas int32) error {
-
-	workloadUnderTestPtr, err := m.GetWorkloadUnderTest(ctx, namespace)
-	if err != nil {
-		m.logger.Error(err, "failed to get workload under test")
-		return fmt.Errorf("failed to get workload under test: %w", err)
-	}
-
-	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-
-		// Let's re-fetch the workload hardening check Custom Resource after updating the status so that we have the latest state
-		if err := m.Get(ctx, types.NamespacedName{Name: (*workloadUnderTestPtr).GetName(), Namespace: namespace}, *workloadUnderTestPtr); err != nil {
-			if apierrors.IsNotFound(err) {
-				// workloadHardeningCheck resource was deleted, while a check was running
-				m.logger.Info("WorkloadHardeningCheck not found, skipping check run update")
-				return nil // If the resource is not found, we can skip the update
-			}
-			m.logger.Error(err, "Failed to re-fetch WorkloadHardeningCheck")
-			return fmt.Errorf("failed to re-fetch WorkloadHardeningCheck: %w", err)
-		}
-
-		switch v := (*workloadUnderTestPtr).(type) {
-		case *appsv1.Deployment:
-			v.Spec.Replicas = &replicas
-		case *appsv1.StatefulSet:
-			v.Spec.Replicas = &replicas
-		case *appsv1.DaemonSet:
-			return fmt.Errorf("cannot scale DaemonSet")
-		default:
-			return fmt.Errorf("unsupported workload kind: %T", v)
-		}
-
-		return m.Update(ctx, *workloadUnderTestPtr)
-	})
-
-	if err == nil {
-		m.logger.V(2).Info("scaled workload under test", "replicas", replicas, "workload", (*workloadUnderTestPtr).GetName())
-		return nil
-	}
-
-	return err
-}
-
-func (m *WorkloadCheckManager) GetPodSpecTemplate(ctx context.Context, namespace string) (*corev1.PodSpec, error) {
-
-	workloadUnderTestPtr, err := m.GetWorkloadUnderTest(ctx, namespace)
-	if err != nil {
-		m.logger.Error(err, "failed to get workload under test")
-		return nil, fmt.Errorf("failed to get workload under test: %w", err)
-	}
-
-	var podSpecTemplate *corev1.PodSpec
-	switch v := (*workloadUnderTestPtr).(type) {
-	case *appsv1.Deployment:
-		podSpecTemplate = &v.Spec.Template.Spec
-	case *appsv1.StatefulSet:
-		podSpecTemplate = &v.Spec.Template.Spec
-	case *appsv1.DaemonSet:
-		podSpecTemplate = &v.Spec.Template.Spec
-	default:
-		return nil, fmt.Errorf("unsupported workload kind: %T", v)
-	}
-
-	return podSpecTemplate, nil
-}
-
-func (m *WorkloadCheckManager) GetWorkloadUnderTest(ctx context.Context, namespace string) (*client.Object, error) {
-
-	name := m.workloadHardeningCheck.Spec.TargetRef.Name
-	kind := m.workloadHardeningCheck.Spec.TargetRef.Kind
-
-	// Verify namespace contains target workload
-	var workloadUnderTest client.Object
-	switch strings.ToLower(kind) {
-	case "deployment":
-		workloadUnderTest = &appsv1.Deployment{}
-	case "statefulset":
-		workloadUnderTest = &appsv1.StatefulSet{}
-	case "daemonset":
-		workloadUnderTest = &appsv1.DaemonSet{}
-	}
-
-	err := m.Get(
-		ctx,
-		types.NamespacedName{
-			Namespace: namespace,
-			Name:      name,
-		},
-		workloadUnderTest,
-	)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then it usually means that it was deleted or not created
-			m.logger.Info("TargetRef not found. You must reference an existing workload to test it", "name", name, "namespace", namespace, "kind", kind)
-			return nil, fmt.Errorf("TargetRef not found. You must reference an existing workload to test it")
-		}
-		// Error reading the object - requeue the request.
-		m.logger.Error(err, "failed to get workloadHardeningCheck.Spec.TargetRef, requeing")
-		return nil, fmt.Errorf("failed to get workloadHardeningCheck.Spec.TargetRef: %w", err)
-	}
-
-	return &workloadUnderTest, nil
-}
-
-func (m *WorkloadCheckManager) VerifyRunning(ctx context.Context, namespace string) (bool, error) {
-	workloadUnderTestPtr, err := m.GetWorkloadUnderTest(ctx, namespace)
-	if err != nil {
-		m.logger.Error(err, "failed to get workload under test")
-		return false, fmt.Errorf("failed to get workload under test: %w", err)
-	}
-
-	return VerifyReadiness(workloadUnderTestPtr, m.Client)
-}
-
-func (m *WorkloadCheckManager) GetLabelSelector(ctx context.Context) (labels.Selector, error) {
-	workloadUnderTest, err := m.GetWorkloadUnderTest(ctx, m.workloadHardeningCheck.GetNamespace())
-	if err != nil {
-		return nil, err
-	}
-
-	var labelSelector *metav1.LabelSelector
-
-	switch v := (*workloadUnderTest).(type) {
-	case *appsv1.Deployment:
-		labelSelector = v.Spec.Selector
-	case *appsv1.StatefulSet:
-		labelSelector = v.Spec.Selector
-	case *appsv1.DaemonSet:
-		labelSelector = v.Spec.Selector
-	}
-
-	return metav1.LabelSelectorAsSelector(labelSelector)
 }
 
 func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
@@ -254,15 +86,15 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 	metricsOracle := orakel.NewMetricsOrakel()
 
 	baselineRecordings := []string{
-		fmt.Sprintf("%s:%s:%s", m.workloadHardeningCheck.Namespace, m.workloadHardeningCheck.Spec.Suffix, "baseline"),
-		fmt.Sprintf("%s:%s:%s", m.workloadHardeningCheck.Namespace, m.workloadHardeningCheck.Spec.Suffix, "baseline-2"),
+		fmt.Sprintf("%s:%s:%s", m.WorkloadHardeningCheck.Namespace, m.WorkloadHardeningCheck.Spec.Suffix, "baseline"),
+		fmt.Sprintf("%s:%s:%s", m.WorkloadHardeningCheck.Namespace, m.WorkloadHardeningCheck.Spec.Suffix, "baseline-2"),
 	}
 
 	// Use custom baseline recording if specified, we assume that the existance of this was already validated
-	if m.workloadHardeningCheck.Spec.BaselineRecordingReference != nil && *m.workloadHardeningCheck.Spec.BaselineRecordingReference != "" {
+	if m.WorkloadHardeningCheck.Spec.BaselineRecordingReference != nil && *m.WorkloadHardeningCheck.Spec.BaselineRecordingReference != "" {
 		baselineRecordings = []string{
-			*m.workloadHardeningCheck.Spec.BaselineRecordingReference,
-			*m.workloadHardeningCheck.Spec.BaselineRecordingReference + "-2",
+			*m.WorkloadHardeningCheck.Spec.BaselineRecordingReference,
+			*m.WorkloadHardeningCheck.Spec.BaselineRecordingReference + "-2",
 		}
 	}
 
@@ -295,7 +127,7 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 		metricsOracle.LoadBaseline(baselineRecording)
 	}
 
-	checkRuns := m.workloadHardeningCheck.Status.CheckRuns
+	checkRuns := m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns
 
 	if len(checkRuns) == 0 {
 		m.logger.V(2).Info("No check runs found in workload hardening check status, skipping analysis")
@@ -310,7 +142,7 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 		m.logger.V(2).Info("Analyzing check run", "checkRun", checkRun.Name)
 
 		// Get the recording for this check run
-		checkRecording, err := m.valKeyClient.GetRecording(ctx, fmt.Sprintf("%s:%s:%s", m.workloadHardeningCheck.Namespace, m.workloadHardeningCheck.Spec.Suffix, checkRun.Name))
+		checkRecording, err := m.valKeyClient.GetRecording(ctx, fmt.Sprintf("%s:%s:%s", m.WorkloadHardeningCheck.Namespace, m.WorkloadHardeningCheck.Spec.Suffix, checkRun.Name))
 		if err != nil {
 			return fmt.Errorf("failed to get recording for check run from ValKey: %w", err)
 		}
@@ -384,7 +216,7 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 	// Update the check run status
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Let's re-fetch the workload hardening check Custom Resource after updating the status so that we have the latest state
-		if err := m.Get(ctx, types.NamespacedName{Name: m.workloadHardeningCheck.Name, Namespace: m.workloadHardeningCheck.Namespace}, m.workloadHardeningCheck); err != nil {
+		if err := m.Get(ctx, types.NamespacedName{Name: m.WorkloadHardeningCheck.Name, Namespace: m.WorkloadHardeningCheck.Namespace}, &m.WorkloadHardeningCheck.WorkloadHardeningCheck); err != nil {
 			if apierrors.IsNotFound(err) {
 				// workloadHardeningCheck resource was deleted, while a check was running
 				m.logger.Info("WorkloadHardeningCheck not found, skipping check run update")
@@ -395,9 +227,9 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 		}
 
 		// Set/Update condition
-		m.workloadHardeningCheck.Status.CheckRuns = updatedCheckRuns
+		m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns = updatedCheckRuns
 
-		return m.Status().Update(ctx, m.workloadHardeningCheck)
+		return m.Status().Update(ctx, &m.WorkloadHardeningCheck.WorkloadHardeningCheck)
 	})
 
 	return err
@@ -409,7 +241,7 @@ func (m *WorkloadCheckManager) SetRecommendation(ctx context.Context) error {
 	securityContexts := map[string]*checksv1alpha1.SecurityContextDefaults{}
 
 	// Get the security context for each check type
-	for _, checkRun := range m.workloadHardeningCheck.Status.CheckRuns {
+	for _, checkRun := range m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns {
 		if checkRun.Name == "baseline" {
 			continue // Skip baseline check
 		}
@@ -420,7 +252,7 @@ func (m *WorkloadCheckManager) SetRecommendation(ctx context.Context) error {
 		securityContexts[checkRun.Name] = checkRun.SecurityContext
 	}
 
-	podSpecTemplate, err := m.GetPodSpecTemplate(ctx, m.workloadHardeningCheck.Namespace)
+	podSpecTemplate, err := m.WorkloadHardeningCheck.GetPodSpecTemplate(ctx, m.WorkloadHardeningCheck.Namespace)
 	if err != nil {
 		m.logger.Error(err, "Failed to get workload under test")
 		return fmt.Errorf("failed to get workload under test: %w", err)
@@ -439,24 +271,24 @@ func (m *WorkloadCheckManager) SetRecommendation(ctx context.Context) error {
 	}
 
 	for _, securityContext := range securityContexts {
-		podSecurityContext = mergePodSecurityContexts(ctx, podSecurityContext, securityContext.Pod.ToK8sSecurityContext())
-		containerSecurityContext = mergeContainerSecurityContexts(ctx, containerSecurityContext, securityContext.Container.ToK8sSecurityContext())
+		podSecurityContext = securitycontextUtil.MergePodSecurityContexts(ctx, podSecurityContext, securityContext.Pod.ToK8sSecurityContext())
+		containerSecurityContext = securitycontextUtil.MergeContainerSecurityContexts(ctx, containerSecurityContext, securityContext.Container.ToK8sSecurityContext())
 	}
 
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Awlays re-fetch the workload hardening check Custom before updating the status
-		if err := m.Get(ctx, types.NamespacedName{Name: m.workloadHardeningCheck.Name, Namespace: m.workloadHardeningCheck.Namespace}, m.workloadHardeningCheck); err != nil {
+		if err := m.Get(ctx, types.NamespacedName{Name: m.WorkloadHardeningCheck.Name, Namespace: m.WorkloadHardeningCheck.Namespace}, &m.WorkloadHardeningCheck.WorkloadHardeningCheck); err != nil {
 			m.logger.Error(err, "Failed to re-fetch WorkloadHardeningCheck")
 			return fmt.Errorf("failed to re-fetch WorkloadHardeningCheck: %w", err)
 		}
 		// Set/Update the recommendation
 
-		m.workloadHardeningCheck.Status.Recommendation = &checksv1alpha1.Recommendation{
+		m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.Recommendation = &checksv1alpha1.Recommendation{
 			ContainerSecurityContexts: containerSecurityContext,
 			PodSecurityContext:        podSecurityContext,
 		}
 
-		return m.Status().Update(ctx, m.workloadHardeningCheck)
+		return m.Status().Update(ctx, &m.WorkloadHardeningCheck.WorkloadHardeningCheck)
 	})
 
 	if err != nil {
@@ -468,67 +300,9 @@ func (m *WorkloadCheckManager) SetRecommendation(ctx context.Context) error {
 
 }
 
-func (m *WorkloadCheckManager) GetRecommendedSecurityContext() *checksv1alpha1.SecurityContextDefaults {
-	// If the recommendation is not set, return nil
-	if !m.RecommendationExists() {
-		return nil
-	}
-
-	recommendation := checksv1alpha1.SecurityContextDefaults{
-		Pod:       &checksv1alpha1.PodSecurityContextDefaults{},
-		Container: &checksv1alpha1.ContainerSecurityContextDefaults{},
-	}
-
-	// If the pod security context is set, use it
-	if m.workloadHardeningCheck.Status.Recommendation.PodSecurityContext != nil {
-		recommendation.Pod = &checksv1alpha1.PodSecurityContextDefaults{
-			RunAsGroup:   m.workloadHardeningCheck.Status.Recommendation.PodSecurityContext.RunAsGroup,
-			RunAsUser:    m.workloadHardeningCheck.Status.Recommendation.PodSecurityContext.RunAsUser,
-			RunAsNonRoot: m.workloadHardeningCheck.Status.Recommendation.PodSecurityContext.RunAsNonRoot,
-			FSGroup:      m.workloadHardeningCheck.Status.Recommendation.PodSecurityContext.FSGroup,
-		}
-	}
-
-	// If the container security context is set, use it
-	if m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts != nil {
-		recommendation.Container = &checksv1alpha1.ContainerSecurityContextDefaults{
-			RunAsGroup:               m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.RunAsGroup,
-			RunAsUser:                m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.RunAsUser,
-			RunAsNonRoot:             m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.RunAsNonRoot,
-			ReadOnlyRootFilesystem:   m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.ReadOnlyRootFilesystem,
-			AllowPrivilegeEscalation: m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.AllowPrivilegeEscalation,
-		}
-		if m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.Capabilities != nil &&
-			m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.Capabilities.Drop != nil {
-			recommendation.Container.CapabilitiesDrop = m.workloadHardeningCheck.Status.Recommendation.ContainerSecurityContexts.Capabilities.Drop
-		} else {
-			recommendation.Container.CapabilitiesDrop = []corev1.Capability{} // Default to dropping all capabilities if not set
-		}
-	}
-
-	// Return the recommendation from the status
-	return &recommendation
-
-}
-
-func (m *WorkloadCheckManager) GetCheckDuration() time.Duration {
-	// Default to 5 minutes if not specified
-	if m.workloadHardeningCheck.Spec.RecordingDuration == "" {
-		return 5 * time.Minute
-	}
-
-	// Parse the duration string
-	duration, err := time.ParseDuration(m.workloadHardeningCheck.Spec.RecordingDuration)
-	if err != nil {
-		return 5 * time.Minute // Fallback to default if parsing fails
-	}
-
-	return duration
-}
-
 func (m *WorkloadCheckManager) SetBaselineRecorded(ctx context.Context) error {
 	// Set the BaselineRecorded condition to True
-	err := m.SetCondition(ctx, metav1.Condition{
+	err := m.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 		Type:    checksv1alpha1.ConditionTypeBaseline,
 		Status:  metav1.ConditionTrue,
 		Reason:  checksv1alpha1.ReasonBaselineRecordingFinished,
@@ -555,7 +329,7 @@ func (m *WorkloadCheckManager) SetBaselineRecorded(ctx context.Context) error {
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Let's re-fetch the workload hardening check Custom Resource after updating the status so that we have the latest state
-		if err := m.Get(ctx, types.NamespacedName{Name: m.workloadHardeningCheck.Name, Namespace: m.workloadHardeningCheck.Namespace}, m.workloadHardeningCheck); err != nil {
+		if err := m.Get(ctx, types.NamespacedName{Name: m.WorkloadHardeningCheck.Name, Namespace: m.WorkloadHardeningCheck.Namespace}, &m.WorkloadHardeningCheck.WorkloadHardeningCheck); err != nil {
 			if apierrors.IsNotFound(err) {
 				// workloadHardeningCheck resource was deleted, while a check was running
 				m.logger.Info("WorkloadHardeningCheck not found, skipping status update")
@@ -564,9 +338,9 @@ func (m *WorkloadCheckManager) SetBaselineRecorded(ctx context.Context) error {
 			m.logger.Error(err, "Failed to re-fetch WorkloadHardeningCheck")
 		}
 
-		m.workloadHardeningCheck.Status.BaselineRuns = baselineRuns
+		m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns = baselineRuns
 
-		return m.Status().Update(ctx, m.workloadHardeningCheck)
+		return m.Status().Update(ctx, &m.WorkloadHardeningCheck.WorkloadHardeningCheck)
 
 	})
 }

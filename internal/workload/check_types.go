@@ -16,7 +16,7 @@ import (
 func (m *WorkloadCheckManager) GetRequiredCheckRuns(ctx context.Context) []string {
 	checks := map[string]bool{}
 
-	workloadUnderTest, err := m.GetWorkloadUnderTest(ctx, m.workloadHardeningCheck.Namespace)
+	workloadUnderTest, err := m.WorkloadHardeningCheck.GetWorkloadUnderTest(ctx, m.WorkloadHardeningCheck.Namespace)
 	if err != nil {
 		m.logger.Error(err, "Failed to get workload under test")
 		return []string{}
@@ -38,9 +38,9 @@ func (m *WorkloadCheckManager) GetRequiredCheckRuns(ctx context.Context) []strin
 			checks[check.GetType()] = true
 			checkType := check.GetType()
 
-			if meta.FindStatusCondition(m.workloadHardeningCheck.Status.Conditions, titleCase.String(checkType)+checksv1alpha1.ConditionTypeCheck) == nil {
+			if meta.FindStatusCondition(m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.Conditions, titleCase.String(checkType)+checksv1alpha1.ConditionTypeCheck) == nil {
 				// if the conditions is not found, we add it in unknown state
-				m.SetCondition(ctx, metav1.Condition{
+				m.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 					Type:    titleCase.String(checkType) + checksv1alpha1.ConditionTypeCheck,
 					Status:  metav1.ConditionUnknown,
 					Reason:  checksv1alpha1.ReasonCheckNotStarted,
@@ -57,7 +57,7 @@ func (m *WorkloadCheckManager) GetRequiredCheckRuns(ctx context.Context) []strin
 
 func (m *WorkloadCheckManager) GetSecurityContextForCheckType(checkType string) *checksv1alpha1.SecurityContextDefaults {
 
-	baseSecurityContext := m.workloadHardeningCheck.Spec.SecurityContext
+	baseSecurityContext := m.WorkloadHardeningCheck.Spec.SecurityContext
 	if baseSecurityContext == nil {
 		baseSecurityContext = &checksv1alpha1.SecurityContextDefaults{
 			Pod:       &checksv1alpha1.PodSecurityContextDefaults{},
