@@ -29,13 +29,14 @@ import (
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
-	wh "github.com/orakel-of-funk/orakel-of-funk-operator/internal/workload"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/orakel"
+	securitycontextUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/securitycontext"
+	workloadUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/workload"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/pkg/workloadhardeningcheck"
 )
 
 type WorkloadCheckRunner struct {
 	client.Client
-	checkManager *wh.WorkloadCheckManager
 
 	scheme *runtime.Scheme
 
@@ -43,7 +44,7 @@ type WorkloadCheckRunner struct {
 	logger       logr.Logger
 	recorder     record.EventRecorder
 
-	workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck
+	workloadHardeningCheck *workloadhardeningcheck.WorkloadHardeningCheck
 	checkType              string
 	conditionType          string
 	targetNamespaceName    string
@@ -112,11 +113,10 @@ func NewWorkloadCheckRunnerForNamespace(
 
 	checkRunner := &WorkloadCheckRunner{
 		Client:                 cl,
-		checkManager:           wh.NewWorkloadCheckManager(ctx, valKeyClient, workloadHardeningCheck),
 		logger:                 log,
 		valKeyClient:           valKeyClient,
 		recorder:               recorder,
-		workloadHardeningCheck: workloadHardeningCheck.DeepCopy(),
+		workloadHardeningCheck: &workloadhardeningcheck.WorkloadHardeningCheck{Client: cl, WorkloadHardeningCheck: *workloadHardeningCheck.DeepCopy()},
 		checkType:              checkType,
 		conditionType:          conditionType,
 		scheme:                 scheme,
@@ -196,7 +196,7 @@ func (r *WorkloadCheckRunner) setStatusRunning(ctx context.Context, message stri
 		conditionReason = checksv1alpha1.ReasonBaselineRecording
 	}
 
-	r.checkManager.SetCondition(ctx, metav1.Condition{
+	r.workloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 		Type:    r.conditionType,
 		Status:  metav1.ConditionFalse,
 		Reason:  conditionReason,
@@ -212,7 +212,7 @@ func (r *WorkloadCheckRunner) setStatusFailed(ctx context.Context, message strin
 		conditionReason = checksv1alpha1.ReasonBaselineRecordingFailed
 	}
 
-	r.checkManager.SetCondition(ctx, metav1.Condition{
+	r.workloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 		Type:    r.conditionType,
 		Status:  metav1.ConditionUnknown,
 		Reason:  conditionReason,
@@ -227,7 +227,7 @@ func (r *WorkloadCheckRunner) setStatusFinishedFailure(ctx context.Context, mess
 		conditionReason = checksv1alpha1.ReasonBaselineRecordingFailed
 	}
 
-	err := r.checkManager.SetCondition(ctx, metav1.Condition{
+	err := r.workloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 		Type:    r.conditionType,
 		Status:  metav1.ConditionTrue,
 		Reason:  conditionReason,
@@ -267,19 +267,19 @@ func (r *WorkloadCheckRunner) setStatusFinishedFailure(ctx context.Context, mess
 
 		switch r.conditionType {
 		case checksv1alpha1.ConditionTypeBaseline:
-			if r.workloadHardeningCheck.Status.BaselineRuns == nil {
-				r.workloadHardeningCheck.Status.BaselineRuns = []*checksv1alpha1.CheckRun{}
+			if r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns == nil {
+				r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns = []*checksv1alpha1.CheckRun{}
 			}
-			r.workloadHardeningCheck.Status.BaselineRuns = append(r.workloadHardeningCheck.Status.BaselineRuns, &checkRun)
+			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns = append(r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns, &checkRun)
 
 		case checksv1alpha1.ConditionTypeFinalCheck:
-			r.workloadHardeningCheck.Status.FinalRun = &checkRun
+			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.FinalRun = &checkRun
 
 		default:
-			if r.workloadHardeningCheck.Status.CheckRuns == nil {
-				r.workloadHardeningCheck.Status.CheckRuns = make(map[string]*checksv1alpha1.CheckRun)
+			if r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns == nil {
+				r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns = make(map[string]*checksv1alpha1.CheckRun)
 			}
-			r.workloadHardeningCheck.Status.CheckRuns[checkRun.Name] = &checkRun
+			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns[checkRun.Name] = &checkRun
 		}
 
 		return r.Status().Update(ctx, r.workloadHardeningCheck)
@@ -293,7 +293,7 @@ func (r *WorkloadCheckRunner) setStatusFinishedSuccessfully(ctx context.Context,
 		conditionReason = checksv1alpha1.ReasonBaselineRecordingFinished
 	}
 
-	err := r.checkManager.SetCondition(ctx, metav1.Condition{
+	err := r.workloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 		Type:    r.conditionType,
 		Status:  metav1.ConditionTrue,
 		Reason:  conditionReason,
@@ -326,21 +326,21 @@ func (r *WorkloadCheckRunner) setStatusFinishedSuccessfully(ctx context.Context,
 		switch r.conditionType {
 		case checksv1alpha1.ConditionTypeBaseline:
 			// Set/Update condition for baseline check
-			if r.workloadHardeningCheck.Status.BaselineRuns == nil {
-				r.workloadHardeningCheck.Status.BaselineRuns = []*checksv1alpha1.CheckRun{}
+			if r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns == nil {
+				r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns = []*checksv1alpha1.CheckRun{}
 			}
 
-			r.workloadHardeningCheck.Status.BaselineRuns = append(r.workloadHardeningCheck.Status.BaselineRuns, &checkRun)
+			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns = append(r.workloadHardeningCheck.WorkloadHardeningCheck.Status.BaselineRuns, &checkRun)
 
 		case checksv1alpha1.ConditionTypeFinalCheck:
-			r.workloadHardeningCheck.Status.FinalRun = &checkRun
+			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.FinalRun = &checkRun
 		default:
 
 			// Set/Update condition
-			if r.workloadHardeningCheck.Status.CheckRuns == nil {
-				r.workloadHardeningCheck.Status.CheckRuns = make(map[string]*checksv1alpha1.CheckRun)
+			if r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns == nil {
+				r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns = make(map[string]*checksv1alpha1.CheckRun)
 			}
-			r.workloadHardeningCheck.Status.CheckRuns[checkRun.Name] = &checkRun
+			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns[checkRun.Name] = &checkRun
 		}
 		return r.Status().Update(ctx, r.workloadHardeningCheck)
 
@@ -374,7 +374,7 @@ func (r *WorkloadCheckRunner) RunCheck(ctx context.Context, securityContext *che
 	// Check if the target namespace already exists, otherwise create it
 	if r.namespaceExists(ctx, r.targetNamespaceName) {
 		if meta.IsStatusConditionPresentAndEqual(
-			r.workloadHardeningCheck.Status.Conditions,
+			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.Conditions,
 			r.conditionType,
 			metav1.ConditionUnknown,
 		) {
@@ -405,7 +405,7 @@ func (r *WorkloadCheckRunner) RunCheck(ctx context.Context, securityContext *che
 	r.setStatusRunning(ctx, "Start target workload with updated security context")
 
 	// Fetch the workload we want to test, make sure we fetch it from the target namespace
-	workloadUnderTest, err := r.checkManager.GetWorkloadUnderTest(ctx, r.targetNamespaceName)
+	workloadUnderTest, err := r.workloadHardeningCheck.GetWorkloadUnderTest(ctx, r.targetNamespaceName)
 	if err != nil {
 		r.logger.Error(err, "failed to get workload under test")
 		r.setStatusFailed(ctx, "Failed to get workload under test")
@@ -451,7 +451,7 @@ func (r *WorkloadCheckRunner) RunCheck(ctx context.Context, securityContext *che
 
 	startTime := metav1.Now()
 
-	labelSelector, _ := r.checkManager.GetLabelSelector(ctx)
+	labelSelector, _ := r.workloadHardeningCheck.GetLabelSelector(ctx)
 
 	// start recording metrics for target workload
 	recordedMetrics, err := r.recordMetrics(ctx, r.targetNamespaceName, labelSelector)
@@ -471,7 +471,7 @@ func (r *WorkloadCheckRunner) RunCheck(ctx context.Context, securityContext *che
 	}
 
 	// If pods are crashLooping, we still want to record the metrics and logs, but we will mark the check as unsuccessful
-	r.checkSuccessful, _ = wh.VerifyReadiness(workloadUnderTest, r.Client)
+	r.checkSuccessful, _ = workloadUtil.VerifyReadiness(workloadUnderTest, r.Client)
 
 	workloadRecording := recording.WorkloadRecording{
 		Type:      r.checkType,
@@ -535,7 +535,7 @@ func (r *WorkloadCheckRunner) waitForUpdatedPods(ctx context.Context, workloadUn
 	targetNamespace := (*workloadUnderTest).GetNamespace()
 	for !updated {
 		r.Get(ctx, types.NamespacedName{Namespace: targetNamespace, Name: (*workloadUnderTest).GetName()}, *workloadUnderTest)
-		updated, _ = wh.VerifyUpdated(*workloadUnderTest)
+		updated, _ = workloadUtil.VerifyUpdated(*workloadUnderTest)
 
 		// Timeout after 2 minutes if the workload is not updated
 		if time.Since(startTime.Time) > 2*time.Minute {
@@ -558,7 +558,7 @@ func (r *WorkloadCheckRunner) waitForUpdatedPods(ctx context.Context, workloadUn
 				),
 			)
 
-			labelSelector, _ := r.checkManager.GetLabelSelector(ctx)
+			labelSelector, _ := r.workloadHardeningCheck.GetLabelSelector(ctx)
 
 			logs, err := r.recordLogs(ctx, targetNamespace, true, labelSelector)
 			if err != nil {
@@ -605,14 +605,14 @@ func (r *WorkloadCheckRunner) applySecurityContext(ctx context.Context, workload
 	// Daemonsets can't be scaled down, so we just apply the security context to them
 	if strings.ToLower(r.workloadHardeningCheck.Spec.TargetRef.Kind) != "daemonset" {
 
-		originalReplicaCount, err = r.checkManager.GetReplicaCount(ctx, (*workloadUnderTest).GetNamespace())
+		originalReplicaCount, err = r.workloadHardeningCheck.GetReplicaCount(ctx, (*workloadUnderTest).GetNamespace())
 		// If there's an error getting the replica count, we log it but continue without scaling down
 		if err != nil {
 			r.logger.Error(err, "failed to get replica count for workload under test")
 		}
 		if originalReplicaCount > 0 && err == nil {
 			r.logger.V(1).Info("Scaling target workload to 0", "originalReplicaCount", originalReplicaCount)
-			r.checkManager.ScaleWorkloadUnderTest(ctx, (*workloadUnderTest).GetNamespace(), 0)
+			r.workloadHardeningCheck.ScaleWorkloadUnderTest(ctx, (*workloadUnderTest).GetNamespace(), 0)
 		}
 
 	}
@@ -634,7 +634,7 @@ func (r *WorkloadCheckRunner) applySecurityContext(ctx context.Context, workload
 
 			}
 
-			err := wh.ApplyCheckSecurityContext(ctx, workloadUnderTest, securityContext.Container, securityContext.Pod)
+			err := securitycontextUtil.ApplyCheckSecurityContext(ctx, workloadUnderTest, securityContext.Container, securityContext.Pod)
 			if err != nil {
 				r.logger.Error(err, "failed to apply security context to workload under test")
 
@@ -656,7 +656,7 @@ func (r *WorkloadCheckRunner) applySecurityContext(ctx context.Context, workload
 	// Scale the workload under test to the original replica count
 	if strings.ToLower(r.workloadHardeningCheck.Spec.TargetRef.Kind) != "daemonset" && originalReplicaCount > 0 {
 		r.logger.V(1).Info("scaling workload to original replica count", "replicaCount", originalReplicaCount)
-		err = r.checkManager.ScaleWorkloadUnderTest(ctx, (*workloadUnderTest).GetNamespace(), originalReplicaCount)
+		err = r.workloadHardeningCheck.ScaleWorkloadUnderTest(ctx, (*workloadUnderTest).GetNamespace(), originalReplicaCount)
 		if err != nil {
 			r.logger.Error(err, "failed to scale workload under test to original replica count")
 			return err
@@ -679,7 +679,7 @@ func (r *WorkloadCheckRunner) recordMetrics(ctx context.Context, targetNamespace
 		ctx,
 		targetNamespace,
 		labelSelector,
-		r.checkManager.GetCheckDuration(),
+		r.workloadHardeningCheck.GetCheckDuration(),
 	)
 }
 

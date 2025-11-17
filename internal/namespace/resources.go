@@ -14,6 +14,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	workloadUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/workload"
 )
 
 var dynamicClient *dynamic.DynamicClient
@@ -61,6 +63,32 @@ func init() {
 		}
 	}
 
+}
+
+func GetSupportedWorkloadResources(ctx context.Context, targetNamespace string) []*unstructured.Unstructured {
+	logger := logf.FromContext(ctx).WithName("getTopLevelResourcesToCheck")
+
+	// Fetch all top-level resources in the target namespace
+	allTopLevelResources := GetTopLevelResources(ctx, targetNamespace)
+
+	if len(allTopLevelResources) == 0 {
+		logger.Info("No top-level resources found in target namespace", "namespace", targetNamespace)
+		return []*unstructured.Unstructured{}
+	}
+
+	// Filter for resources that are compatible with WorkloadHardeningCheck,
+	// Currently supported are:
+	// - Deployments
+	// - StatefulSets
+	// - DaemonSets
+	usableResources := []*unstructured.Unstructured{}
+	for _, resource := range allTopLevelResources {
+		if workloadUtil.IsSupportedUnstructured(resource) {
+			usableResources = append(usableResources, resource)
+		}
+	}
+
+	return usableResources
 }
 
 func GetTopLevelResources(ctx context.Context, namespace string) []*unstructured.Unstructured {
