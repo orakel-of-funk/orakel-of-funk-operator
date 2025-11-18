@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,6 +27,8 @@ import (
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
 	securitycontextUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/securitycontext"
 	workloadUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/workload"
 )
@@ -33,8 +36,10 @@ import (
 // NamespaceHardeningCheckReconciler reconciles a NamespaceHardeningCheck object
 type NamespaceHardeningCheckReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+
+	ValkeyClient *valkey.ValkeyClient
+	Scheme       *runtime.Scheme
+	Recorder     record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=orakel.ofunk.org,resources=namespacehardeningchecks,verbs=get;list;watch;create;update;patch;delete
@@ -128,8 +133,68 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, nil
 	}
 
+	// No baseline recorded yet, let's record a basline for each workload in the target namespace, but in a single namespace
+	if meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline) == nil {
+		logger.Info("Recording baseline for workloads in target namespace", "namespace", namespaceHardening.Spec.TargetNamespace)
+		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+			Type:    checksv1alpha1.ConditionTypeBaseline,
+			Status:  metav1.ConditionFalse,
+			Reason:  checksv1alpha1.ReasonBaselineRecording,
+			Message: "No baseline recordings yet, creating new ones.",
+		})
+
+		go func() {
+			wg := sync.WaitGroup{}
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				err := r.recordAllWorkloads(ctx, namespaceHardening, "baseline")
+				if err != nil {
+					logger.Error(err, "Failed to record baseline for workloads in target namespace", "namespace", namespaceHardening.Spec.TargetNamespace)
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				err := r.recordAllWorkloads(ctx, namespaceHardening, "baseline-2")
+				if err != nil {
+					logger.Error(err, "Failed to record second baseline for workloads in target namespace", "namespace", namespaceHardening.Spec.TargetNamespace)
+				}
+			}()
+			wg.Wait()
+			r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+				Type:    checksv1alpha1.ConditionTypeBaseline,
+				Status:  metav1.ConditionTrue,
+				Reason:  checksv1alpha1.ReasonBaselineRecordingFinished,
+				Message: "Baseline recordings completed for all workloads.",
+			})
+		}()
+
+		return ctrl.Result{RequeueAfter: GetCheckDuration(namespaceHardening) + 1*time.Minute}, nil
+
+	}
+
+	if meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline) != nil &&
+		meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline).Status != metav1.ConditionTrue {
+		condition := meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline)
+		if condition != nil && condition.LastTransitionTime.Add(GetCheckDuration(namespaceHardening)+5*time.Minute).Before(time.Now()) {
+			// Baseline recording took too long, we assume it failed
+			logger.Error(fmt.Errorf("baseline recording timeout"), "Baseline recordings took too long, marking NamespaceHardeningCheck as failed",
+				"namespace", namespaceHardening.Spec.TargetNamespace)
+			r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+				Type:    checksv1alpha1.ConditionTypeFinished,
+				Status:  metav1.ConditionTrue,
+				Reason:  checksv1alpha1.ReasonFailed,
+				Message: "Baseline recordings took too long, marking NamespaceHardeningCheck as failed",
+			})
+			return ctrl.Result{}, nil
+		} else {
+			logger.Info("Baseline recordings are still in progress, waiting before creating WorkloadHardeningChecks")
+
+			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+		}
+	}
+
 	workloadChecks := []*checksv1alpha1.WorkloadHardeningCheck{}
-	// ToDo: Around here somewhere, we should record the baseline for each workload, and only if that finished successfully, we create the WorkloadHardeningCheck, and inject the BaselineRecordingReference into it
 	for _, resource := range topLevelResources {
 		logger.Info("Found top-level resource to check", "kind", resource.GetKind(), "name", resource.GetName(), "namespace", namespaceHardening.Spec.TargetNamespace)
 		// Create a WorkloadHardeningCheck for each top-level resource
@@ -262,6 +327,99 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	return ctrl.Result{}, nil
 }
 
+func (r *NamespaceHardeningCheckReconciler) recordAllWorkloads(ctx context.Context, namespaceHardening *checksv1alpha1.NamespaceHardeningCheck, recordingName string) error {
+	logger := logf.FromContext(ctx).WithName("recordAllWorkloads")
+
+	topLevelResources := namespace.GetSupportedWorkloadResources(ctx, namespaceHardening.Spec.TargetNamespace)
+
+	targetNamespace := namespaceHardening.Spec.TargetNamespace + "-" + namespaceHardening.Spec.Suffix + "-" + recordingName
+	err := namespace.Clone(ctx, r.Client, namespaceHardening.Spec.TargetNamespace, targetNamespace, namespaceHardening.Spec.Suffix)
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Baseline namespace already exists, using it", "namespace", targetNamespace)
+			// If the namespace already exists, we can continue with the baseline recording
+		} else {
+			logger.Error(err, "Failed to clone namespace for baseline recording", "namespace", namespaceHardening.Spec.TargetNamespace, "baselineNamespace", targetNamespace)
+			return err
+		}
+	}
+	logger.Info("Cloned namespace for baseline recording", "sourceNamespace", namespaceHardening.Spec.TargetNamespace, "baselineNamespace", targetNamespace)
+
+	// Set controller reference to the NamespaceHardeningCheck, to ensure it gets cleaned up automatically
+	baselineNamespaceObj := &corev1.Namespace{}
+	r.Get(ctx, types.NamespacedName{Name: targetNamespace}, baselineNamespaceObj)
+	ctrl.SetControllerReference(namespaceHardening, baselineNamespaceObj, r.Scheme)
+	// Update the namespace with the controller reference
+	_ = r.Update(ctx, baselineNamespaceObj)
+
+	time.Sleep(5 * time.Second)
+
+	successChannels := make(map[string]chan *recording.WorkloadRecording)
+	errorChannels := make(map[string]chan *error)
+	wg := sync.WaitGroup{}
+
+	// Record baseline for each workload in the baseline namespace
+	for _, resource := range topLevelResources {
+		successChannel := make(chan *recording.WorkloadRecording, 1)
+		errorChannel := make(chan *error, 1)
+
+		successChannels[resource.GetKind()+"/"+resource.GetName()] = successChannel
+		errorChannels[resource.GetKind()+"/"+resource.GetName()] = errorChannel
+
+		logger.Info("Recording baseline for workload", "kind", resource.GetKind(), "name", resource.GetName(), "namespace", targetNamespace)
+		checkRecorder := recording.NewCheckRecorder(
+			ctx,
+			recordingName,
+			targetNamespace,
+			checksv1alpha1.TargetReference{Kind: resource.GetKind(), Name: resource.GetName()},
+			GetCheckDuration(namespaceHardening),
+		)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			checkRecorder.Record(ctx, successChannel, errorChannel)
+		}()
+	}
+
+	wg.Wait()
+
+	// Wait for all baseline recordings to finish
+	for _, resource := range topLevelResources {
+		select {
+		case recording := <-successChannels[resource.GetKind()+"/"+resource.GetName()]:
+			logger.Info("Baseline recording completed for workload", "kind", resource.GetKind(), "name", resource.GetName())
+			valkeyKey := strings.ToLower(namespaceHardening.Spec.Suffix + "-" + resource.GetKind() + "-" + resource.GetName())
+			err := r.ValkeyClient.StoreRecording(ctx, valkeyKey, recording)
+			if err != nil {
+				logger.Error(err, "Failed to store baseline recording in ValKey for workload", "kind", resource.GetKind(), "name", resource.GetName())
+			}
+		case err := <-errorChannels[resource.GetKind()+"/"+resource.GetName()]:
+			logger.Error(*err, "Baseline recording failed for workload", "kind", resource.GetKind(), "name", resource.GetName())
+		}
+
+	}
+
+	// Cleanup baseline namespace in the background
+	go func() { namespace.Delete(ctx, r.Client, targetNamespace) }()
+	return nil
+}
+
+func GetCheckDuration(check *checksv1alpha1.NamespaceHardeningCheck) time.Duration {
+	// Default to 5 minutes if not specified
+	if check.Spec.RecordingDuration == "" {
+		return 5 * time.Minute
+	}
+
+	// Parse the duration string
+	duration, err := time.ParseDuration(check.Spec.RecordingDuration)
+	if err != nil {
+		return 5 * time.Minute // Fallback to default if parsing fails
+	}
+
+	return duration
+}
+
+// ToDo: With baseline recordings done from this controller, we can now also compare the final check run with the initial baseline recordings!
 func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Context, namespaceHardening *checksv1alpha1.NamespaceHardeningCheck) (bool, error) {
 	logger := logf.FromContext(ctx).WithName("createFinalCheckRun")
 
@@ -410,6 +568,8 @@ func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx con
 		logger.Info("WorkloadHardeningCheck not found, creating new one", "workload", resource.GetName(), "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
 	}
 
+	baselineRecordingReference := strings.ToLower(namespaceHardeningCheck.Spec.Suffix+"-"+resource.GetKind()+"-"+resource.GetName()) + ":baseline"
+
 	// Create a new WorkloadHardeningCheck for each top-level resource
 	workloadCheck = &checksv1alpha1.WorkloadHardeningCheck{
 		ObjectMeta: metav1.ObjectMeta{
@@ -427,9 +587,10 @@ func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx con
 				Kind: resource.GetKind(),
 				Name: resource.GetName(),
 			},
-			RecordingDuration: namespaceHardeningCheck.Spec.RecordingDuration,
-			RunMode:           namespaceHardeningCheck.Spec.RunMode,
-			SecurityContext:   namespaceHardeningCheck.Spec.SecurityContext.DeepCopy(),
+			RecordingDuration:          namespaceHardeningCheck.Spec.RecordingDuration,
+			RunMode:                    namespaceHardeningCheck.Spec.RunMode,
+			SecurityContext:            namespaceHardeningCheck.Spec.SecurityContext.DeepCopy(),
+			BaselineRecordingReference: &baselineRecordingReference,
 		},
 	}
 

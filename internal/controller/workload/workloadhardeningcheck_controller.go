@@ -5,6 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/runner"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/workload"
+
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	corev1 "k8s.io/api/core/v1"
@@ -21,12 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
-	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
-	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
-	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/runner"
-	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
-	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/workload"
 )
 
 // WorkloadHardeningCheckReconciler reconciles a WorkloadHardeningCheck object

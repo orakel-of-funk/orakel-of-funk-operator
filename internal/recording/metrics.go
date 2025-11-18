@@ -70,7 +70,7 @@ func NewMetricsRecorder(ctx context.Context, ksClient client.Client) *MetricsRec
 	}
 }
 
-func (r *MetricsRecorder) RecordMetrics(ctx context.Context, targetNamespace string, labelSelector labels.Selector, checkDuration time.Duration) ([]ResourceUsageRecord, error) {
+func (r *MetricsRecorder) RecordMetrics(ctx context.Context, targetNamespace string, labelSelector labels.Selector, checkDuration time.Duration) ([]*ResourceUsageRecord, error) {
 	// get pods under observation, we use the label selector from the workload under test
 	pods := &corev1.PodList{}
 PodsAssigned:
@@ -162,10 +162,10 @@ PodsAssigned:
 	// close channels so that the range loops will stop
 	close(metricsChannel)
 
-	resourceUsageRecords := []ResourceUsageRecord{}
+	resourceUsageRecords := []*ResourceUsageRecord{}
 	for result := range metricsChannel {
 		for _, usage := range result.Usage {
-			resourceUsageRecords = append(resourceUsageRecords, usage)
+			resourceUsageRecords = append(resourceUsageRecords, &usage)
 		}
 	}
 	r.logger.V(1).Info("collected metrics")

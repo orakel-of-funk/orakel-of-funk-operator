@@ -171,18 +171,7 @@ func (w *WorkloadHardeningCheck) GetLabelSelector(ctx context.Context) (labels.S
 		return nil, err
 	}
 
-	var labelSelector *metav1.LabelSelector
-
-	switch v := (*workloadUnderTest).(type) {
-	case *appsv1.Deployment:
-		labelSelector = v.Spec.Selector
-	case *appsv1.StatefulSet:
-		labelSelector = v.Spec.Selector
-	case *appsv1.DaemonSet:
-		labelSelector = v.Spec.Selector
-	}
-
-	return metav1.LabelSelectorAsSelector(labelSelector)
+	return workload.GetLabelSelectorForWorkload(workloadUnderTest)
 }
 
 func (w *WorkloadHardeningCheck) GetRecommendedSecurityContext() *v1alpha1.SecurityContextDefaults {
