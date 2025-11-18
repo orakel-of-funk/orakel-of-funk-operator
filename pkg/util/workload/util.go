@@ -10,13 +10,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var supportedWorkloadKinds = []string{
 	"deployment",
 	"statefulset",
-	"daemonSet",
+	"daemonset",
 }
 
 func IsSupportedUnstructured(resource *unstructured.Unstructured) bool {
@@ -41,8 +42,7 @@ func VerifyUpdated(workloadUnderTest client.Object) (bool, error) {
 	return false, fmt.Errorf("kind of workloadUnderTest not supported")
 }
 
-func GetPodsForWorkload(ctx context.Context, c client.Client, workloadUnderTest *client.Object) ([]corev1.Pod, error) {
-
+func GetLabelSelectorForWorkload(workloadUnderTest *client.Object) (labels.Selector, error) {
 	var labelSelector *metav1.LabelSelector
 	switch v := (*workloadUnderTest).(type) {
 	case *appsv1.Deployment:
@@ -51,10 +51,18 @@ func GetPodsForWorkload(ctx context.Context, c client.Client, workloadUnderTest 
 		labelSelector = v.Spec.Selector
 	case *appsv1.DaemonSet:
 		labelSelector = v.Spec.Selector
+	default:
+		return nil, fmt.Errorf("kind of workloadUnderTest not supported")
 	}
 
+	return metav1.LabelSelectorAsSelector(labelSelector)
+
+}
+
+func GetPodsForWorkload(ctx context.Context, c client.Client, workloadUnderTest *client.Object) ([]corev1.Pod, error) {
+
 	// Get the label selector for the workload
-	podLabelSelector, err := metav1.LabelSelectorAsSelector(labelSelector)
+	podLabelSelector, err := GetLabelSelectorForWorkload(workloadUnderTest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get label selector: %w", err)
 	}

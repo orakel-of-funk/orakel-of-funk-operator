@@ -18,7 +18,7 @@ func (cms *CheckMetricsSummary) updateValues(cpu, memory int64) {
 	cms.MemorySummary.originalValues = append(cms.MemorySummary.originalValues, memory)
 }
 
-func NewCheckMetricsSummary(metrics []recording.ResourceUsageRecord) *CheckMetricsSummary {
+func NewCheckMetricsSummary(metrics []*recording.ResourceUsageRecord) *CheckMetricsSummary {
 	checkSummary := &CheckMetricsSummary{
 		CpuSummary: MetricsSummary{
 			originalValues: []int64{},
@@ -111,7 +111,7 @@ func NewMetricsOrakel() *MetricsOrakel {
 
 func (mo *MetricsOrakel) LoadBaseline(workloadRecording *recording.WorkloadRecording) {
 	// Load baseline metrics from the recording
-	if mo.BaselineMetricsSummary == nil {
+	if mo.BaselineMetricsSummary == nil && workloadRecording.RecordedMetrics != nil {
 		mo.BaselineMetricsSummary = NewCheckMetricsSummary(workloadRecording.RecordedMetrics)
 		return
 	}

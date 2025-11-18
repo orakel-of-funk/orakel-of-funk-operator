@@ -463,7 +463,7 @@ func (r *WorkloadCheckRunner) RunCheck(ctx context.Context, securityContext *che
 	}
 
 	// Record logs for the workload, since recordMetrics only returns after the duration is reached, we can asusme that we get the full logs here
-	logs, err := r.recordLogs(ctx, r.targetNamespaceName, false, labelSelector) // false means we want the current logs, not the previous ones
+	logs, err := r.recordLogs(ctx, r.targetNamespaceName, labelSelector, false) // false means we want the current logs, not the previous ones
 	if err != nil {
 		r.logger.Error(err, "failed to record logs")
 		r.setStatusFailed(ctx, "Failed to record logs")
@@ -560,7 +560,8 @@ func (r *WorkloadCheckRunner) waitForUpdatedPods(ctx context.Context, workloadUn
 
 			labelSelector, _ := r.workloadHardeningCheck.GetLabelSelector(ctx)
 
-			logs, err := r.recordLogs(ctx, targetNamespace, true, labelSelector)
+			// Record the logs of a failed workload update
+			logs, err := r.recordLogs(ctx, targetNamespace, labelSelector, true)
 			if err != nil {
 				r.logger.Error(err, "failed to record logs")
 				return false, err
@@ -666,7 +667,7 @@ func (r *WorkloadCheckRunner) applySecurityContext(ctx context.Context, workload
 	return nil
 }
 
-func (r *WorkloadCheckRunner) recordMetrics(ctx context.Context, targetNamespace string, labelSelector labels.Selector) ([]recording.ResourceUsageRecord, error) {
+func (r *WorkloadCheckRunner) recordMetrics(ctx context.Context, targetNamespace string, labelSelector labels.Selector) ([]*recording.ResourceUsageRecord, error) {
 
 	time.Sleep(2 * time.Second) // Give the workload some time to be ready with the updated security context
 
@@ -683,7 +684,7 @@ func (r *WorkloadCheckRunner) recordMetrics(ctx context.Context, targetNamespace
 	)
 }
 
-func (r *WorkloadCheckRunner) recordLogs(ctx context.Context, targetNamespace string, previous bool, labelSelector labels.Selector) (map[string][]string, error) {
+func (r *WorkloadCheckRunner) recordLogs(ctx context.Context, targetNamespace string, labelSelector labels.Selector, previous bool) (map[string][]string, error) {
 
 	podLogRecorder := recording.NewPodLogRecorder(ctx, r.Client)
 

@@ -207,10 +207,12 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 		checkRun.CheckSuccessfull = ptr.To(checkSuccessful)
 		updatedCheckRuns[checkRun.Name] = checkRun
 
-		// Just add them to the check run, currently not further evaluated
-		cpuDeviation, memoryDeviation := metricsOracle.AnalyzeTarget(checkRecording)
-		checkRun.CpuDeviation = ptr.To(cpuDeviation)
-		checkRun.MemoryDeviation = ptr.To(memoryDeviation)
+		if checkRecording.RecordedMetrics != nil {
+			// Just add them to the check run, currently not further evaluated
+			cpuDeviation, memoryDeviation := metricsOracle.AnalyzeTarget(checkRecording)
+			checkRun.CpuDeviation = ptr.To(cpuDeviation)
+			checkRun.MemoryDeviation = ptr.To(memoryDeviation)
+		}
 	}
 
 	// Update the check run status

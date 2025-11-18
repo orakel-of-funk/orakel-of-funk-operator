@@ -45,6 +45,7 @@ func (m *WorkloadCheckManager) RemoveCheckConditions(ctx context.Context) error 
 	return err
 }
 
+// Returns true if all checks in Status.CheckRuns are marked as finished
 func (m *WorkloadCheckManager) AllChecksFinished() bool {
 	m.WorkloadHardeningCheck.RefreshWorkloadHardeningCheck()
 

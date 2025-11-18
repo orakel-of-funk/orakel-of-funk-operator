@@ -233,9 +233,10 @@ func main() {
 	setupLog.Info("workload-hardening-controller successfully configured")
 
 	if err := (&namespace.NamespaceHardeningCheckReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("namespace-hardening-controller"),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorderFor("namespace-hardening-controller"),
+		ValkeyClient: valKeyClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NamespaceHardeningCheck")
 		os.Exit(1)
