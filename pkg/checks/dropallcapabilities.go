@@ -20,6 +20,8 @@ func registerCapabilityCheck(capabilityCheck CheckInterface) error {
 	return nil
 }
 
+// DropAllCapabilitiesCheck checks if containers remain functional with all capabilities dropped
+// Ideally, if this check fails, individual capability checks will be run to determine which capabilities are necessary
 type DropAllCapabilitiesCheck struct{}
 
 func (c *DropAllCapabilitiesCheck) GetType() string {
@@ -34,7 +36,7 @@ func (c *DropAllCapabilitiesCheck) GetSecurityContextDefaults(baseSecurityContex
 	return baseSecurityContext
 }
 
-// This check should run if the pod spec does not have ReadOnlyRootFilesystem set
+// This check should run if the pod spec does not already drop all capabilities in all containers
 func (c *DropAllCapabilitiesCheck) ShouldRun(podSpec *corev1.PodSpec) bool {
 	// if any container does not any capabilities dropped, we should run this check
 	for _, container := range podSpec.Containers {

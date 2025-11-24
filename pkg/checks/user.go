@@ -7,6 +7,8 @@ import (
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 )
 
+// UserCheck ensures that pods run as a non-root user
+// This check sets default RunAsUser and RunAsNonRoot values if they are not already set
 type UserCheck struct{}
 
 func (c *UserCheck) GetType() string {

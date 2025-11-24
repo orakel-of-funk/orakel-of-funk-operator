@@ -7,6 +7,9 @@ import (
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 )
 
+// Ensure that pods can eb run with specific user and group IDs
+// This check sets RunAsUser, RunAsGroup, and FSGroup if they are not already set as they have dependent relationships.
+// For example, it is not possible to set FSGroup without setting RunAsGroup.
 type GroupCheck struct{}
 
 func (c *GroupCheck) GetType() string {

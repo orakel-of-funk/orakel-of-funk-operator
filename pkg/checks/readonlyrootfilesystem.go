@@ -7,6 +7,7 @@ import (
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 )
 
+// Checks if the containers remain functional with ReadOnlyRootFilesystem set to true
 type ReadOnlyRootFilesystemCheck struct{}
 
 func (c *ReadOnlyRootFilesystemCheck) GetType() string {

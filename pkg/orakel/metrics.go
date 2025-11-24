@@ -1,6 +1,7 @@
 package orakel
 
 import (
+	"fmt"
 	"slices"
 
 	"gonum.org/v1/gonum/stat"
@@ -109,11 +110,14 @@ func NewMetricsOrakel() *MetricsOrakel {
 	}
 }
 
-func (mo *MetricsOrakel) LoadBaseline(workloadRecording *recording.WorkloadRecording) {
+func (mo *MetricsOrakel) LoadBaseline(workloadRecording *recording.WorkloadRecording) error {
+	if workloadRecording == nil {
+		return fmt.Errorf("no workloadRecording provided, aborting")
+	}
 	// Load baseline metrics from the recording
 	if mo.BaselineMetricsSummary == nil && workloadRecording.RecordedMetrics != nil {
 		mo.BaselineMetricsSummary = NewCheckMetricsSummary(workloadRecording.RecordedMetrics)
-		return
+		return nil
 	}
 
 	for _, containerMetrics := range workloadRecording.RecordedMetrics {
@@ -124,6 +128,7 @@ func (mo *MetricsOrakel) LoadBaseline(workloadRecording *recording.WorkloadRecor
 	mo.BaselineMetricsSummary.CpuSummary.updateSummary()
 	mo.BaselineMetricsSummary.MemorySummary.updateSummary()
 
+	return nil
 }
 
 func (mo *MetricsOrakel) AnalyzeTarget(workloadRecording *recording.WorkloadRecording) (cpuDeviation bool, memoryDeviation bool) {

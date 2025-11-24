@@ -79,6 +79,9 @@ func NewWorkloadCheckManager(ctx context.Context, valKeyClient *valkey.ValkeyCli
 
 }
 
+// Anlayzes all check runs in the WorkloadHardeningCheck.Status.CheckRuns
+// They are all compared to two baseline recordings, to detect anomalies in logs and metrics
+// If anomalies are found, the check run is marked as failed and the anomalies are pushed to the check run status
 func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 
 	// Contains a drainMiner for each container in the baseline recording
@@ -90,7 +93,7 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 		fmt.Sprintf("%s:%s:%s", m.WorkloadHardeningCheck.Namespace, m.WorkloadHardeningCheck.Spec.Suffix, "baseline-2"),
 	}
 
-	// Use custom baseline recording if specified, we assume that the existance of this was already validated
+	// Use custom baseline recording if specified, we assume that the existence of this was already validated
 	if m.WorkloadHardeningCheck.Spec.BaselineRecordingReference != nil && *m.WorkloadHardeningCheck.Spec.BaselineRecordingReference != "" {
 		baselineRecordings = []string{
 			*m.WorkloadHardeningCheck.Spec.BaselineRecordingReference,
@@ -123,8 +126,8 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 			logOraclePerContainer[containerName] = drainMiner
 		}
 
-		// Metrics oracle is per pod/workload
-		metricsOracle.LoadBaseline(baselineRecording)
+		// Metrics oracle is per pod/workload, we ignore the error as we checked for nil previously
+		_ = metricsOracle.LoadBaseline(baselineRecording)
 	}
 
 	checkRuns := m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns
@@ -238,6 +241,7 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 
 }
 
+// Based on the successful checkRuns, merges their security contexts into a final recommendation
 func (m *WorkloadCheckManager) SetRecommendation(ctx context.Context) error {
 
 	securityContexts := map[string]*checksv1alpha1.SecurityContextDefaults{}
@@ -302,6 +306,7 @@ func (m *WorkloadCheckManager) SetRecommendation(ctx context.Context) error {
 
 }
 
+// Sets the BaselineRecorded condition to True and adds two successful baseline runs to the status
 func (m *WorkloadCheckManager) SetBaselineRecorded(ctx context.Context) error {
 	// Set the BaselineRecorded condition to True
 	err := m.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
