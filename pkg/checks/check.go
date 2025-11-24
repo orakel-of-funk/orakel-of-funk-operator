@@ -6,6 +6,10 @@ import (
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 )
 
+// Interface that all checks must implement. A check must also register itself using the RegisterCheck function.
+// Whenever a WorkloadHardeningCheck is created, ShouldRun is used to determine which checks to run.
+// When running a specific check, GetSecurityContextDefaults is used to get the security context defaults for that check,
+// which are then merged into the existing seucrityContext of the workload.
 type CheckInterface interface {
 	// GetType returns the type of the check, e.g., "group", "user
 	GetType() string

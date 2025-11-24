@@ -599,6 +599,9 @@ func (r *WorkloadCheckRunner) waitForUpdatedPods(ctx context.Context, workloadUn
 	return true, nil
 }
 
+// Modifies the target workload to apply the security context built for the check
+// Scales down the workload to 0 replicas befor applying the securityContext to make sure no pods are running with the old configuration
+// Scales the workload back to the original replica count after applying the security context, except for Daemonsets which can't be scaled
 func (r *WorkloadCheckRunner) applySecurityContext(ctx context.Context, workloadUnderTest *client.Object, securityContext *checksv1alpha1.SecurityContextDefaults) error {
 
 	originalReplicaCount := int32(0)
@@ -667,6 +670,8 @@ func (r *WorkloadCheckRunner) applySecurityContext(ctx context.Context, workload
 	return nil
 }
 
+// Records the metrics of the currently running pods matching the label selector in the target namespace
+// If the workload is crashlooping, the metrics will still be recorded, but the results may be incomplete
 func (r *WorkloadCheckRunner) recordMetrics(ctx context.Context, targetNamespace string, labelSelector labels.Selector) ([]*recording.ResourceUsageRecord, error) {
 
 	time.Sleep(2 * time.Second) // Give the workload some time to be ready with the updated security context
@@ -684,6 +689,8 @@ func (r *WorkloadCheckRunner) recordMetrics(ctx context.Context, targetNamespace
 	)
 }
 
+// Record logs of the pods matching the label selector in the target namespace
+// previous indicates whether to record the previous logs (before the last restart) or the current logs
 func (r *WorkloadCheckRunner) recordLogs(ctx context.Context, targetNamespace string, labelSelector labels.Selector, previous bool) (map[string][]string, error) {
 
 	podLogRecorder := recording.NewPodLogRecorder(ctx, r.Client)

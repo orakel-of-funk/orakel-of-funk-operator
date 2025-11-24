@@ -60,12 +60,12 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 
 	// Get Resource
 	// Fetch the NamespaceHardeningCheck instance
-	namespaceHardening := &checksv1alpha1.NamespaceHardeningCheck{}
-	err := r.Get(ctx, req.NamespacedName, namespaceHardening)
+	nsHardenCheck := &checksv1alpha1.NamespaceHardeningCheck{}
+	err := r.Get(ctx, req.NamespacedName, nsHardenCheck)
 	if err != nil {
-		// If the resource is not found it's usually because it was deleted, we need to cleanup remaining resources
+		// If the resource is not found it's usually because it was deleted, we rely on owner references to clean up child resources
 		if apierrors.IsNotFound(err) {
-			return r.cleanupReconcileLoop(ctx, req.Name)
+			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
 		logger.Error(err, "Failed to get NamespaceHardeningCheck, requeing")
@@ -73,24 +73,25 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	// ConditionFinished is set to true when the reconciliation is finished
-	if meta.IsStatusConditionTrue(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeFinished) {
+	if meta.IsStatusConditionTrue(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeFinished) {
 		logger.Info("NamespaceHardeningCheck is already finished, skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
 	// Validate the namespace referenced exists => Move to validation webhook
-	if namespaceHardening.Spec.TargetNamespace == "" {
+	if nsHardenCheck.Spec.TargetNamespace == "" {
 		logger.Error(nil, "NamespaceHardeningCheck has no namespace specified, skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
+	// Already validated in webhook, but double check here anyway
 	targetNamespace := corev1.Namespace{}
-	err = r.Get(ctx, client.ObjectKey{Name: namespaceHardening.Spec.TargetNamespace}, &targetNamespace)
+	err = r.Get(ctx, client.ObjectKey{Name: nsHardenCheck.Spec.TargetNamespace}, &targetNamespace)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Error(err, "Target namespace for NamespaceHardeningCheck not found, aborting reconciliation")
 
-			r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+			r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 				Type:    checksv1alpha1.ConditionTypeFinished,
 				Status:  metav1.ConditionFalse,
 				Reason:  checksv1alpha1.ReasonTargetNamespaceNotFound,
@@ -107,10 +108,10 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	// Check if the NamespaceHardeningCheck is already in progress
-	if meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeFinished) == nil {
+	if meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeFinished) == nil {
 		// Initial run...
-		logger.Info("Starting NamespaceHardeningCheck reconciliation", "namespace", namespaceHardening.Spec.TargetNamespace)
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+		logger.Info("Starting NamespaceHardeningCheck reconciliation", "namespace", nsHardenCheck.Spec.TargetNamespace)
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
 			Status:  metav1.ConditionFalse,
 			Reason:  checksv1alpha1.ConditionTypePreparation,
@@ -118,13 +119,13 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 		})
 	}
 
-	topLevelResources := namespace.GetSupportedWorkloadResources(ctx, namespaceHardening.Spec.TargetNamespace)
+	supportedWorkloadResources := namespace.GetSupportedWorkloadResources(ctx, nsHardenCheck.Spec.TargetNamespace)
 
 	// Filter topLevelResoruces for those compatible with WorkloadHardeningCheck
-	if len(topLevelResources) == 0 {
+	if len(supportedWorkloadResources) == 0 {
 		logger.Info("No top-level resources found in target namespace, skipping WorkloadHardeningCheck creation",
-			"namespace", namespaceHardening.Spec.TargetNamespace)
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+			"namespace", nsHardenCheck.Spec.TargetNamespace)
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
 			Status:  metav1.ConditionTrue,
 			Reason:  checksv1alpha1.ReasonAnalysisFinished,
@@ -134,9 +135,9 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	// No baseline recorded yet, let's record a basline for each workload in the target namespace, but in a single namespace
-	if meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline) == nil {
-		logger.Info("Recording baseline for workloads in target namespace", "namespace", namespaceHardening.Spec.TargetNamespace)
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+	if meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline) == nil {
+		logger.Info("Recording baseline for workloads in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeBaseline,
 			Status:  metav1.ConditionFalse,
 			Reason:  checksv1alpha1.ReasonBaselineRecording,
@@ -148,20 +149,20 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				err := r.recordAllWorkloads(ctx, namespaceHardening, "baseline")
+				err := r.recordAllWorkloads(ctx, nsHardenCheck, "baseline")
 				if err != nil {
-					logger.Error(err, "Failed to record baseline for workloads in target namespace", "namespace", namespaceHardening.Spec.TargetNamespace)
+					logger.Error(err, "Failed to record baseline for workloads in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
 				}
 			}()
 			go func() {
 				defer wg.Done()
-				err := r.recordAllWorkloads(ctx, namespaceHardening, "baseline-2")
+				err := r.recordAllWorkloads(ctx, nsHardenCheck, "baseline-2")
 				if err != nil {
-					logger.Error(err, "Failed to record second baseline for workloads in target namespace", "namespace", namespaceHardening.Spec.TargetNamespace)
+					logger.Error(err, "Failed to record second baseline for workloads in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
 				}
 			}()
 			wg.Wait()
-			r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+			r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 				Type:    checksv1alpha1.ConditionTypeBaseline,
 				Status:  metav1.ConditionTrue,
 				Reason:  checksv1alpha1.ReasonBaselineRecordingFinished,
@@ -169,18 +170,18 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 			})
 		}()
 
-		return ctrl.Result{RequeueAfter: GetCheckDuration(namespaceHardening) + 1*time.Minute}, nil
+		return ctrl.Result{RequeueAfter: GetCheckDuration(nsHardenCheck) + 1*time.Minute}, nil
 
 	}
 
-	if meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline) != nil &&
-		meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline).Status != metav1.ConditionTrue {
-		condition := meta.FindStatusCondition(namespaceHardening.Status.Conditions, checksv1alpha1.ConditionTypeBaseline)
-		if condition != nil && condition.LastTransitionTime.Add(GetCheckDuration(namespaceHardening)+5*time.Minute).Before(time.Now()) {
+	if meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline) != nil &&
+		meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline).Status != metav1.ConditionTrue {
+		condition := meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline)
+		if condition != nil && condition.LastTransitionTime.Add(GetCheckDuration(nsHardenCheck)+5*time.Minute).Before(time.Now()) {
 			// Baseline recording took too long, we assume it failed
 			logger.Error(fmt.Errorf("baseline recording timeout"), "Baseline recordings took too long, marking NamespaceHardeningCheck as failed",
-				"namespace", namespaceHardening.Spec.TargetNamespace)
-			r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+				"namespace", nsHardenCheck.Spec.TargetNamespace)
+			r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 				Type:    checksv1alpha1.ConditionTypeFinished,
 				Status:  metav1.ConditionTrue,
 				Reason:  checksv1alpha1.ReasonFailed,
@@ -195,16 +196,16 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	workloadChecks := []*checksv1alpha1.WorkloadHardeningCheck{}
-	for _, resource := range topLevelResources {
-		logger.Info("Found top-level resource to check", "kind", resource.GetKind(), "name", resource.GetName(), "namespace", namespaceHardening.Spec.TargetNamespace)
+	for _, resource := range supportedWorkloadResources {
+		logger.Info("Found top-level resource to check", "kind", resource.GetKind(), "name", resource.GetName(), "namespace", nsHardenCheck.Spec.TargetNamespace)
 		// Create a WorkloadHardeningCheck for each top-level resource
-		workloadCheck, err := r.createWorkloadHardeningCheck(ctx, namespaceHardening, resource)
+		workloadCheck, err := r.createWorkloadHardeningCheck(ctx, nsHardenCheck, resource)
 		if err != nil {
 			logger.Error(err, "Failed to create WorkloadHardeningCheck for top-level resource",
-				"kind", resource.GetKind(), "name", resource.GetName(), "namespace", namespaceHardening.Spec.TargetNamespace)
-			r.Recorder.Eventf(namespaceHardening, corev1.EventTypeWarning, "Failed",
+				"kind", resource.GetKind(), "name", resource.GetName(), "namespace", nsHardenCheck.Spec.TargetNamespace)
+			r.Recorder.Eventf(nsHardenCheck, corev1.EventTypeWarning, "Failed",
 				"Failed to create WorkloadHardeningCheck for %s/%s in namespace %s: %v",
-				resource.GetKind(), resource.GetName(), namespaceHardening.Spec.TargetNamespace, err)
+				resource.GetKind(), resource.GetName(), nsHardenCheck.Spec.TargetNamespace, err)
 
 			continue // Skip this resource and continue with the next one
 		}
@@ -214,27 +215,27 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 
 	if len(workloadChecks) == 0 {
 		logger.Info("No WorkloadHardeningChecks created as they already exist",
-			"namespace", namespaceHardening.Spec.TargetNamespace)
+			"namespace", nsHardenCheck.Spec.TargetNamespace)
 	} else {
-		r.Recorder.Eventf(namespaceHardening, corev1.EventTypeNormal, "WorkloadChecksCreated",
+		r.Recorder.Eventf(nsHardenCheck, corev1.EventTypeNormal, "WorkloadChecksCreated",
 			"Created %d WorkloadHardeningChecks for top-level resources in namespace %s",
-			len(workloadChecks), namespaceHardening.Spec.TargetNamespace)
+			len(workloadChecks), nsHardenCheck.Spec.TargetNamespace)
 
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:   checksv1alpha1.ConditionTypeFinished,
 			Status: metav1.ConditionFalse,
 			Reason: checksv1alpha1.ReasonWorkloadChecksCreated,
 			Message: fmt.Sprintf("Created %d WorkloadHardeningChecks for top-level resources in namespace %s",
-				len(workloadChecks), namespaceHardening.Spec.TargetNamespace),
+				len(workloadChecks), nsHardenCheck.Spec.TargetNamespace),
 		})
 	}
 
 	// check if all WorkloadHardeningChecks in the namespace are finished
 	// If not, we can return and wait for the next reconciliation loop
 	workloadCheckList := &checksv1alpha1.WorkloadHardeningCheckList{}
-	err = r.List(ctx, workloadCheckList, client.InNamespace(namespaceHardening.Spec.TargetNamespace))
+	err = r.List(ctx, workloadCheckList, client.InNamespace(nsHardenCheck.Spec.TargetNamespace))
 	if err != nil {
-		logger.Error(err, "Failed to list WorkloadHardeningChecks in target namespace", "namespace", namespaceHardening.Spec.TargetNamespace)
+		logger.Error(err, "Failed to list WorkloadHardeningChecks in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
 		return ctrl.Result{RequeueAfter: 1 * time.Minute}, err
 	}
 
@@ -250,20 +251,20 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	// Not all checks are finished, requeue
 	if finishedCount != len(workloadCheckList.Items) {
 		logger.Info("Not all WorkloadHardeningChecks are finished, waiting for next reconciliation loop",
-			"namespace", namespaceHardening.Spec.TargetNamespace)
+			"namespace", nsHardenCheck.Spec.TargetNamespace)
 
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
 			Status:  metav1.ConditionFalse,
 			Reason:  checksv1alpha1.ReasonNamespaceInProgress,
-			Message: fmt.Sprintf("NamespaceHardeningCheck is in progress, %d/%d finished", finishedCount, len(topLevelResources)),
+			Message: fmt.Sprintf("NamespaceHardeningCheck is in progress, %d/%d finished", finishedCount, len(supportedWorkloadResources)),
 		})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// All WorkloadHardeningChecks are finished, we can run a final check with all workloads hardened at once
 	logger.Info("All WorkloadHardeningChecks are finished, creating final check for namespace hardening",
-		"namespace", namespaceHardening.Spec.TargetNamespace)
+		"namespace", nsHardenCheck.Spec.TargetNamespace)
 
 	recommendations := make(map[string]*checksv1alpha1.Recommendation)
 	for _, check := range workloadCheckList.Items {
@@ -274,7 +275,7 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 
 	retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Re-fetch the NamespaceHardeningCheck instance to ensure we have the latest state
-		if err := r.Get(ctx, req.NamespacedName, namespaceHardening); err != nil {
+		if err := r.Get(ctx, req.NamespacedName, nsHardenCheck); err != nil {
 			if apierrors.IsNotFound(err) {
 				logger.Info("NamespaceHardeningCheck not found, skipping finalization")
 				return nil // If the resource is not found, we can skip the update
@@ -283,21 +284,21 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 			return err
 		}
 
-		namespaceHardening.Status.Recommendations = recommendations
+		nsHardenCheck.Status.Recommendations = recommendations
 
-		meta.SetStatusCondition(&namespaceHardening.Status.Conditions, metav1.Condition{
+		meta.SetStatusCondition(&nsHardenCheck.Status.Conditions, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
 			Status:  metav1.ConditionFalse,
 			Reason:  checksv1alpha1.ConditionTypeFinalCheck,
 			Message: "Creating final check for namespace hardening",
 		})
-		return r.Status().Update(ctx, namespaceHardening)
+		return r.Status().Update(ctx, nsHardenCheck)
 	})
 
-	success, err := r.createFinalCheckRun(ctx, namespaceHardening)
+	success, err := r.createFinalCheckRun(ctx, nsHardenCheck)
 	if err != nil {
-		logger.Error(err, "Failed to create final check run for namespace hardening", "namespace", namespaceHardening.Spec.TargetNamespace)
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+		logger.Error(err, "Failed to create final check run for namespace hardening", "namespace", nsHardenCheck.Spec.TargetNamespace)
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
 			Status:  metav1.ConditionTrue,
 			Reason:  checksv1alpha1.ConditionTypeFinished,
@@ -307,16 +308,16 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	if success {
-		logger.Info("Final check run for namespace hardening completed successfully", "namespace", namespaceHardening.Spec.TargetNamespace)
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+		logger.Info("Final check run for namespace hardening completed successfully", "namespace", nsHardenCheck.Spec.TargetNamespace)
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
 			Status:  metav1.ConditionTrue,
 			Reason:  checksv1alpha1.ReasonSuccess,
 			Message: "Namespace hardening checks completed successfully",
 		})
 	} else {
-		logger.Info("Final check run for namespace hardening failed", "namespace", namespaceHardening.Spec.TargetNamespace)
-		r.SetCondition(ctx, namespaceHardening, metav1.Condition{
+		logger.Info("Final check run for namespace hardening failed", "namespace", nsHardenCheck.Spec.TargetNamespace)
+		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
 			Status:  metav1.ConditionTrue,
 			Reason:  checksv1alpha1.ReasonFailed,
@@ -327,28 +328,28 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 	return ctrl.Result{}, nil
 }
 
-func (r *NamespaceHardeningCheckReconciler) recordAllWorkloads(ctx context.Context, namespaceHardening *checksv1alpha1.NamespaceHardeningCheck, recordingName string) error {
+func (r *NamespaceHardeningCheckReconciler) recordAllWorkloads(ctx context.Context, nsHardenCheck *checksv1alpha1.NamespaceHardeningCheck, recordingName string) error {
 	logger := logf.FromContext(ctx).WithName("recordAllWorkloads")
 
-	topLevelResources := namespace.GetSupportedWorkloadResources(ctx, namespaceHardening.Spec.TargetNamespace)
+	topLevelResources := namespace.GetSupportedWorkloadResources(ctx, nsHardenCheck.Spec.TargetNamespace)
 
-	targetNamespace := namespaceHardening.Spec.TargetNamespace + "-" + namespaceHardening.Spec.Suffix + "-" + recordingName
-	err := namespace.Clone(ctx, r.Client, namespaceHardening.Spec.TargetNamespace, targetNamespace, namespaceHardening.Spec.Suffix)
+	targetNamespace := nsHardenCheck.Spec.TargetNamespace + "-" + nsHardenCheck.Spec.Suffix + "-" + recordingName
+	err := namespace.Clone(ctx, r.Client, nsHardenCheck.Spec.TargetNamespace, targetNamespace, nsHardenCheck.Spec.Suffix)
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			logger.Info("Baseline namespace already exists, using it", "namespace", targetNamespace)
 			// If the namespace already exists, we can continue with the baseline recording
 		} else {
-			logger.Error(err, "Failed to clone namespace for baseline recording", "namespace", namespaceHardening.Spec.TargetNamespace, "baselineNamespace", targetNamespace)
+			logger.Error(err, "Failed to clone namespace for baseline recording", "namespace", nsHardenCheck.Spec.TargetNamespace, "baselineNamespace", targetNamespace)
 			return err
 		}
 	}
-	logger.Info("Cloned namespace for baseline recording", "sourceNamespace", namespaceHardening.Spec.TargetNamespace, "baselineNamespace", targetNamespace)
+	logger.Info("Cloned namespace for baseline recording", "sourceNamespace", nsHardenCheck.Spec.TargetNamespace, "baselineNamespace", targetNamespace)
 
 	// Set controller reference to the NamespaceHardeningCheck, to ensure it gets cleaned up automatically
 	baselineNamespaceObj := &corev1.Namespace{}
 	r.Get(ctx, types.NamespacedName{Name: targetNamespace}, baselineNamespaceObj)
-	ctrl.SetControllerReference(namespaceHardening, baselineNamespaceObj, r.Scheme)
+	ctrl.SetControllerReference(nsHardenCheck, baselineNamespaceObj, r.Scheme)
 	// Update the namespace with the controller reference
 	_ = r.Update(ctx, baselineNamespaceObj)
 
@@ -372,7 +373,7 @@ func (r *NamespaceHardeningCheckReconciler) recordAllWorkloads(ctx context.Conte
 			recordingName,
 			targetNamespace,
 			checksv1alpha1.TargetReference{Kind: resource.GetKind(), Name: resource.GetName()},
-			GetCheckDuration(namespaceHardening),
+			GetCheckDuration(nsHardenCheck),
 		)
 		wg.Add(1)
 		go func() {
@@ -388,7 +389,7 @@ func (r *NamespaceHardeningCheckReconciler) recordAllWorkloads(ctx context.Conte
 		select {
 		case recording := <-successChannels[resource.GetKind()+"/"+resource.GetName()]:
 			logger.Info("Baseline recording completed for workload", "kind", resource.GetKind(), "name", resource.GetName())
-			valkeyKey := strings.ToLower(namespaceHardening.Spec.Suffix + "-" + resource.GetKind() + "-" + resource.GetName())
+			valkeyKey := strings.ToLower(nsHardenCheck.Spec.TargetNamespace + ":" + nsHardenCheck.Spec.Suffix + ":" + resource.GetKind() + "-" + resource.GetName())
 			err := r.ValkeyClient.StoreRecording(ctx, valkeyKey, recording)
 			if err != nil {
 				logger.Error(err, "Failed to store baseline recording in ValKey for workload", "kind", resource.GetKind(), "name", resource.GetName())
@@ -420,21 +421,21 @@ func GetCheckDuration(check *checksv1alpha1.NamespaceHardeningCheck) time.Durati
 }
 
 // ToDo: With baseline recordings done from this controller, we can now also compare the final check run with the initial baseline recordings!
-func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Context, namespaceHardening *checksv1alpha1.NamespaceHardeningCheck) (bool, error) {
+func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Context, nsHardenCheck *checksv1alpha1.NamespaceHardeningCheck) (bool, error) {
 	logger := logf.FromContext(ctx).WithName("createFinalCheckRun")
 
-	finalCheckNamespace := namespaceHardening.Spec.TargetNamespace + "-" + namespaceHardening.Spec.Suffix + "-final"
+	finalCheckNamespace := nsHardenCheck.Spec.TargetNamespace + "-" + nsHardenCheck.Spec.Suffix + "-final"
 	if len(finalCheckNamespace) > 63 {
 		finalCheckNamespace = finalCheckNamespace[:63] // Ensure the namespace name is within the 63 character limit
 	}
 
-	err := namespace.Clone(ctx, r.Client, namespaceHardening.Spec.TargetNamespace, finalCheckNamespace, namespaceHardening.Spec.Suffix)
+	err := namespace.Clone(ctx, r.Client, nsHardenCheck.Spec.TargetNamespace, finalCheckNamespace, nsHardenCheck.Spec.Suffix)
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			logger.Info("Final check namespace already exists, using it", "namespace", finalCheckNamespace)
 			// If the namespace already exists, we can continue with the final check
 		} else {
-			logger.Error(err, "Failed to clone namespace for final check", "namespace", namespaceHardening.Spec.TargetNamespace, "finalCheckNamespace", finalCheckNamespace)
+			logger.Error(err, "Failed to clone namespace for final check", "namespace", nsHardenCheck.Spec.TargetNamespace, "finalCheckNamespace", finalCheckNamespace)
 			return false, err
 		}
 	}
@@ -443,9 +444,9 @@ func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Cont
 	r.Get(ctx, types.NamespacedName{Name: finalCheckNamespace}, finalCheckNamespaceObj)
 
 	// Set controller reference to the NamespaceHardeningCheck, to ensure it gets cleaned up automatically
-	ctrl.SetControllerReference(namespaceHardening, finalCheckNamespaceObj, r.Scheme)
+	ctrl.SetControllerReference(nsHardenCheck, finalCheckNamespaceObj, r.Scheme)
 
-	logger.Info("Cloned namespace for final check", "sourceNamespace", namespaceHardening.Spec.TargetNamespace, "finalCheckNamespace", finalCheckNamespace)
+	logger.Info("Cloned namespace for final check", "sourceNamespace", nsHardenCheck.Spec.TargetNamespace, "finalCheckNamespace", finalCheckNamespace)
 	topLevelResources := namespace.GetTopLevelResources(ctx, finalCheckNamespace)
 
 	// Should be caught way earlier, but just in case
@@ -464,7 +465,7 @@ func (r *NamespaceHardeningCheckReconciler) createFinalCheckRun(ctx context.Cont
 				continue // Skip this resource if we can't get the workload
 			}
 			// Apply security context from recommendations if available
-			if recommendation, ok := namespaceHardening.Status.Recommendations[resource.GetKind()+"/"+resource.GetName()]; ok {
+			if recommendation, ok := nsHardenCheck.Status.Recommendations[resource.GetKind()+"/"+resource.GetName()]; ok {
 				securitycontextUtil.ApplySecurityContext(ctx, workloadUnderTest, recommendation.ContainerSecurityContexts, recommendation.PodSecurityContext)
 
 				r.Update(ctx, *workloadUnderTest)
@@ -499,7 +500,7 @@ Resources:
 				if time.Since(startTime.Time) > 2*time.Minute {
 					logger.Error(nil, "Workload did not become running in time after security context update", "kind", resource.GetKind(), "name", resource.GetName())
 					success = false
-					r.Recorder.Eventf(namespaceHardening, corev1.EventTypeWarning, "WorkloadNotRunning",
+					r.Recorder.Eventf(nsHardenCheck, corev1.EventTypeWarning, "WorkloadNotRunning",
 						"Workload %s/%s did not become running in time after security context update",
 						resource.GetKind(), resource.GetName())
 
@@ -546,78 +547,78 @@ func (r *NamespaceHardeningCheckReconciler) GetWorkloadUnderTest(ctx context.Con
 	return &workloadUnderTest, nil
 }
 
-func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx context.Context, namespaceHardeningCheck *checksv1alpha1.NamespaceHardeningCheck, resource *unstructured.Unstructured) (*checksv1alpha1.WorkloadHardeningCheck, error) {
+func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx context.Context, nsHardenCheck *checksv1alpha1.NamespaceHardeningCheck, resource *unstructured.Unstructured) (*checksv1alpha1.WorkloadHardeningCheck, error) {
 	logger := logf.FromContext(ctx)
 
 	workloadCheck := &checksv1alpha1.WorkloadHardeningCheck{}
 	if err := r.Get(ctx, client.ObjectKey{
-		Name:      strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + namespaceHardeningCheck.Spec.Suffix),
-		Namespace: namespaceHardeningCheck.Spec.TargetNamespace,
+		Name:      strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + nsHardenCheck.Spec.Suffix),
+		Namespace: nsHardenCheck.Spec.TargetNamespace,
 	}, workloadCheck); err == nil {
 		// WorkloadHardeningCheck already exists, we can skip creating it
-		logger.Info("WorkloadHardeningCheck already exists, skipping creation", "workload", resource.GetName(), "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
+		logger.Info("WorkloadHardeningCheck already exists, skipping creation", "workload", resource.GetName(), "namespace", nsHardenCheck.Spec.TargetNamespace)
 		return workloadCheck, nil
 	} else {
 		if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Failed to get existing WorkloadHardeningCheck", "workload", resource.GetName(), "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
+			logger.Error(err, "Failed to get existing WorkloadHardeningCheck", "workload", resource.GetName(), "namespace", nsHardenCheck.Spec.TargetNamespace)
 			return nil, fmt.Errorf("failed to get existing WorkloadHardeningCheck for %s/%s in namespace %s: %w",
-				resource.GetKind(), resource.GetName(), namespaceHardeningCheck.Spec.TargetNamespace, err)
+				resource.GetKind(), resource.GetName(), nsHardenCheck.Spec.TargetNamespace, err)
 		}
 
 		// If the WorkloadHardeningCheck does not exist, we will create it
-		logger.Info("WorkloadHardeningCheck not found, creating new one", "workload", resource.GetName(), "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
+		logger.Info("WorkloadHardeningCheck not found, creating new one", "workload", resource.GetName(), "namespace", nsHardenCheck.Spec.TargetNamespace)
 	}
 
-	baselineRecordingReference := strings.ToLower(namespaceHardeningCheck.Spec.Suffix+"-"+resource.GetKind()+"-"+resource.GetName()) + ":baseline"
+	baselineRecordingReference := strings.ToLower(nsHardenCheck.Spec.TargetNamespace + ":" + nsHardenCheck.Spec.Suffix + ":" + resource.GetKind() + "-" + resource.GetName())
 
 	// Create a new WorkloadHardeningCheck for each top-level resource
 	workloadCheck = &checksv1alpha1.WorkloadHardeningCheck{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + namespaceHardeningCheck.Spec.Suffix),
-			Namespace: namespaceHardeningCheck.Spec.TargetNamespace,
+			Name:      strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + nsHardenCheck.Spec.Suffix),
+			Namespace: nsHardenCheck.Spec.TargetNamespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/name":       strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + namespaceHardeningCheck.Spec.Suffix),
+				"app.kubernetes.io/name":       strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + nsHardenCheck.Spec.Suffix),
 				"app.kubernetes.io/managed-by": "oracle-of-funk",
-				"appkubernetes.io/part-of":     namespaceHardeningCheck.Name,
+				"appkubernetes.io/part-of":     nsHardenCheck.Name,
 			},
 		},
 		Spec: checksv1alpha1.WorkloadHardeningCheckSpec{
-			Suffix: namespaceHardeningCheck.Spec.Suffix + "-" + utilrand.String(8), // Generate a random suffix of 8 characters
+			Suffix: nsHardenCheck.Spec.Suffix + "-" + utilrand.String(8), // Generate a random suffix of 8 characters
 			TargetRef: checksv1alpha1.TargetReference{
 				Kind: resource.GetKind(),
 				Name: resource.GetName(),
 			},
-			RecordingDuration:          namespaceHardeningCheck.Spec.RecordingDuration,
-			RunMode:                    namespaceHardeningCheck.Spec.RunMode,
-			SecurityContext:            namespaceHardeningCheck.Spec.SecurityContext.DeepCopy(),
+			RecordingDuration:          nsHardenCheck.Spec.RecordingDuration,
+			RunMode:                    nsHardenCheck.Spec.RunMode,
+			SecurityContext:            nsHardenCheck.Spec.SecurityContext.DeepCopy(),
 			BaselineRecordingReference: &baselineRecordingReference,
 		},
 	}
 
 	// set owner reference to the NamespaceHardeningCheck
-	if err := ctrl.SetControllerReference(namespaceHardeningCheck, workloadCheck, r.Scheme); err != nil {
-		logger.Error(err, "Failed to set controller reference for WorkloadHardeningCheck", "workload", workloadCheck.Spec.TargetRef.Name, "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
+	if err := ctrl.SetControllerReference(nsHardenCheck, workloadCheck, r.Scheme); err != nil {
+		logger.Error(err, "Failed to set controller reference for WorkloadHardeningCheck", "workload", workloadCheck.Spec.TargetRef.Name, "namespace", nsHardenCheck.Spec.TargetNamespace)
 	}
 
 	// Create the WorkloadHardeningCheck
 	if err := r.Create(ctx, workloadCheck); err != nil {
-		logger.Error(err, "Failed to create WorkloadHardeningCheck", "workload", workloadCheck.Spec.TargetRef.Name, "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
+		logger.Error(err, "Failed to create WorkloadHardeningCheck", "workload", workloadCheck.Spec.TargetRef.Name, "namespace", nsHardenCheck.Spec.TargetNamespace)
 		return nil, fmt.Errorf("failed to create WorkloadHardeningCheck for %s/%s in namespace %s: %w",
-			workloadCheck.Spec.TargetRef.Kind, workloadCheck.Spec.TargetRef.Name, namespaceHardeningCheck.Spec.TargetNamespace, err)
+			workloadCheck.Spec.TargetRef.Kind, workloadCheck.Spec.TargetRef.Name, nsHardenCheck.Spec.TargetNamespace, err)
 	}
 
-	logger.Info("Created WorkloadHardeningCheck", "workload", workloadCheck.Spec.TargetRef.Name, "namespace", namespaceHardeningCheck.Spec.TargetNamespace)
+	logger.Info("Created WorkloadHardeningCheck", "workload", workloadCheck.Spec.TargetRef.Name, "namespace", nsHardenCheck.Spec.TargetNamespace)
 
 	return workloadCheck, nil
 }
 
-func (r *NamespaceHardeningCheckReconciler) SetCondition(ctx context.Context, namespaceHardeningCheck *checksv1alpha1.NamespaceHardeningCheck, condition metav1.Condition) error {
+func (r *NamespaceHardeningCheckReconciler) SetCondition(ctx context.Context, nsHardenCheck *checksv1alpha1.NamespaceHardeningCheck, condition metav1.Condition) error {
 	logger := logf.FromContext(ctx).WithName("NamespaceHardeningCheckReconciler")
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 
 		// Let's re-fetch the workload hardening check Custom Resource after updating the status so that we have the latest state
-		if err := r.Get(ctx, client.ObjectKey{Name: namespaceHardeningCheck.Name}, namespaceHardeningCheck); err != nil {
+		if err := r.Get(ctx, client.ObjectKey{Name: nsHardenCheck.Name}, nsHardenCheck); err != nil {
 			if apierrors.IsNotFound(err) {
 				// workloadHardeningCheck resource was deleted, while a check was running
 				logger.Info("WorkloadHardeningCheck not found, skipping condition update")
@@ -629,24 +630,15 @@ func (r *NamespaceHardeningCheckReconciler) SetCondition(ctx context.Context, na
 
 		// Set/Update condition
 		meta.SetStatusCondition(
-			&namespaceHardeningCheck.Status.Conditions,
+			&nsHardenCheck.Status.Conditions,
 			condition,
 		)
 
-		return r.Status().Update(ctx, namespaceHardeningCheck)
+		return r.Status().Update(ctx, nsHardenCheck)
 
 	})
 
 	return err
-}
-
-// Called if the NamespaceHardeningCheck instance is removed or deleted and we need to clean up the resources
-func (r *NamespaceHardeningCheckReconciler) cleanupReconcileLoop(ctx context.Context, name string) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx).WithName("cleanupReconcileLoop")
-
-	// Check if a namespace belonging to the NamespaceHardeningCheck exists
-
-	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

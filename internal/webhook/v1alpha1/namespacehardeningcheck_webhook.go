@@ -98,6 +98,7 @@ func (v *NamespaceHardeningCheckCustomValidator) ValidateCreate(_ context.Contex
 		return nil, fmt.Errorf("namespace must be set during creation of NamespaceHardeningCheck")
 	}
 
+	// Check if the target namespace exists
 	targetNamespace := &corev1.Namespace{}
 	if err := v.Get(context.Background(), client.ObjectKey{Name: namespacehardeningcheck.Spec.TargetNamespace}, targetNamespace); err != nil {
 		namespacehardeningchecklog.Error(err, "Failed to get target namespace", "name", namespacehardeningcheck.Spec.TargetNamespace)

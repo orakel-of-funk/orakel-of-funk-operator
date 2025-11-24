@@ -198,11 +198,9 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
-.PHONY: deploy-kind
-deploy-kind: install ## Build a new image, load it into the kind cluster and restart the pod.
-	$(MAKE) docker-build
+.PHONY: kind-load-image
+kind-load-image: docker-build ## Build a new image, load it into the kind cluster and restart the pod.
 	$(KIND) load docker-image ${IMG}
-	$(KUBECTL) -n orakel-of-funk-system delete pod -l app.kubernetes.io/name=orakel-of-funk
 
 ##@ Dependencies
 
