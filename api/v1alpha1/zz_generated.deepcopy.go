@@ -423,8 +423,8 @@ func (in *WorkloadHardeningCheckSpec) DeepCopyInto(out *WorkloadHardeningCheckSp
 	out.TargetRef = in.TargetRef
 	if in.BaselineRecordingReference != nil {
 		in, out := &in.BaselineRecordingReference, &out.BaselineRecordingReference
-		*out = new(string)
-		**out = **in
+		*out = make([]string, len(*in))
+		copy(*out, *in)
 	}
 	if in.SecurityContext != nil {
 		in, out := &in.SecurityContext, &out.SecurityContext
