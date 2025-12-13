@@ -313,7 +313,7 @@ func (r *WorkloadCheckRunner) setStatusFinishedSuccessfully(ctx context.Context,
 
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Let's re-fetch the workload hardening check Custom Resource after updating the status so that we have the latest state
-		if err := r.Get(ctx, types.NamespacedName{Name: r.workloadHardeningCheck.Name, Namespace: r.workloadHardeningCheck.Namespace}, r.workloadHardeningCheck); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: r.workloadHardeningCheck.WorkloadHardeningCheck.Name, Namespace: r.workloadHardeningCheck.WorkloadHardeningCheck.Namespace}, &r.workloadHardeningCheck.WorkloadHardeningCheck); err != nil {
 			if apierrors.IsNotFound(err) {
 				// workloadHardeningCheck resource was deleted, while a check was running
 				r.logger.Info("WorkloadHardeningCheck not found, skipping status update")
@@ -342,7 +342,7 @@ func (r *WorkloadCheckRunner) setStatusFinishedSuccessfully(ctx context.Context,
 			}
 			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns[checkRun.Name] = &checkRun
 		}
-		return r.Status().Update(ctx, r.workloadHardeningCheck)
+		return r.Status().Update(ctx, &r.workloadHardeningCheck.WorkloadHardeningCheck)
 
 	})
 

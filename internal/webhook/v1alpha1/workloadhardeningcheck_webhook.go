@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -111,15 +112,12 @@ func (v *WorkloadHardeningCheckCustomValidator) ValidateCreate(ctx context.Conte
 	}
 
 	// Verify that the baseline recording exists in ValKey
-	if workloadhardeningcheck.Spec.BaselineRecordingReference != nil && *workloadhardeningcheck.Spec.BaselineRecordingReference != "" {
-		if _, err := v.ValKeyClient.GetRecording(ctx, *workloadhardeningcheck.Spec.BaselineRecordingReference); err != nil {
-			workloadhardeningchecklog.Error(err, "Failed to get baseline recording from ValKey", "name", workloadhardeningcheck.GetName(), "recording", *workloadhardeningcheck.Spec.BaselineRecordingReference)
-			return nil, fmt.Errorf("failed to get baseline recording %s from ValKey: %w", *workloadhardeningcheck.Spec.BaselineRecordingReference, err)
-		}
-
-		if _, err := v.ValKeyClient.GetRecording(ctx, *workloadhardeningcheck.Spec.BaselineRecordingReference+"-2"); err != nil {
-			workloadhardeningchecklog.Error(err, "Failed to get baseline recording from ValKey", "name", workloadhardeningcheck.GetName(), "recording", *workloadhardeningcheck.Spec.BaselineRecordingReference+"-2")
-			return nil, fmt.Errorf("failed to get baseline recording %s from ValKey: %w", *workloadhardeningcheck.Spec.BaselineRecordingReference+"-2", err)
+	if len(workloadhardeningcheck.Spec.BaselineRecordingReference) != 0 {
+		for _, recordingRef := range workloadhardeningcheck.Spec.BaselineRecordingReference {
+			if _, err := v.ValKeyClient.GetRecording(ctx, recordingRef); err != nil {
+				workloadhardeningchecklog.Error(err, "Failed to get baseline recording from ValKey", "name", workloadhardeningcheck.GetName(), "recording", recordingRef)
+				return nil, fmt.Errorf("failed to get baseline recording %s from ValKey: %w", recordingRef, err)
+			}
 		}
 
 	}
@@ -152,9 +150,21 @@ func (v *WorkloadHardeningCheckCustomValidator) ValidateUpdate(ctx context.Conte
 		return nil, fmt.Errorf("targetRef cannot be changed during update of WorkloadHardeningCheck")
 	}
 
-	if oldWorkloadhardeningcheck.Spec.BaselineRecordingReference != newWorkloadhardeningcheck.Spec.BaselineRecordingReference {
+	if len(oldWorkloadhardeningcheck.Spec.BaselineRecordingReference) != len(newWorkloadhardeningcheck.Spec.BaselineRecordingReference) {
 		workloadhardeningchecklog.Info("BaselineRecordingReference cannot be changed during update", "oldBaselineRecordingReference", oldWorkloadhardeningcheck.Spec.BaselineRecordingReference, "newBaselineRecordingReference", newWorkloadhardeningcheck.Spec.BaselineRecordingReference)
 		return nil, fmt.Errorf("baselineRecordingReference cannot be changed during update of WorkloadHardeningCheck")
+	} else if len(oldWorkloadhardeningcheck.Spec.BaselineRecordingReference) > 0 {
+		oldSorted := make([]string, len(oldWorkloadhardeningcheck.Spec.BaselineRecordingReference))
+		copy(oldSorted, oldWorkloadhardeningcheck.Spec.BaselineRecordingReference)
+		slices.Sort(oldSorted)
+		newSorted := make([]string, len(newWorkloadhardeningcheck.Spec.BaselineRecordingReference))
+		copy(newSorted, newWorkloadhardeningcheck.Spec.BaselineRecordingReference)
+		slices.Sort(newSorted)
+
+		if !slices.Equal(oldSorted, newSorted) {
+			workloadhardeningchecklog.Info("BaselineRecordingReference cannot be changed during update", "oldBaselineRecordingReference", oldWorkloadhardeningcheck.Spec.BaselineRecordingReference, "newBaselineRecordingReference", newWorkloadhardeningcheck.Spec.BaselineRecordingReference)
+			return nil, fmt.Errorf("baselineRecordingReference cannot be changed during update of WorkloadHardeningCheck")
+		}
 	}
 
 	workloadhardeningchecklog.Info("WorkloadHardeningCheck update validation passed", "name", newWorkloadhardeningcheck.GetName())

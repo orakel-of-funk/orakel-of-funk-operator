@@ -3,6 +3,7 @@ package workload
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
@@ -232,8 +233,8 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// The validation webhook already ensures that the BaselineRecordingReference exists during creation, so we simply update the status here
-	if workloadHardening.Spec.BaselineRecordingReference != nil && *workloadHardening.Spec.BaselineRecordingReference != "" {
-		logger.Info("Using existing baseline recording from ValKey", "reference", *workloadHardening.Spec.BaselineRecordingReference)
+	if len(workloadHardening.Spec.BaselineRecordingReference) > 0 && !checkManager.WorkloadHardeningCheck.BaselineRecorded() {
+		logger.Info("Using existing baseline recording from ValKey", "reference", strings.Join(workloadHardening.Spec.BaselineRecordingReference, ","))
 		checkManager.SetBaselineRecorded(ctx)
 	}
 

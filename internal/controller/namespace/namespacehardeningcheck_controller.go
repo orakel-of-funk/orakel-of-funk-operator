@@ -588,10 +588,13 @@ func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx con
 				Kind: resource.GetKind(),
 				Name: resource.GetName(),
 			},
-			RecordingDuration:          nsHardenCheck.Spec.RecordingDuration,
-			RunMode:                    nsHardenCheck.Spec.RunMode,
-			SecurityContext:            nsHardenCheck.Spec.SecurityContext.DeepCopy(),
-			BaselineRecordingReference: &baselineRecordingReference,
+			RecordingDuration: nsHardenCheck.Spec.RecordingDuration,
+			RunMode:           nsHardenCheck.Spec.RunMode,
+			SecurityContext:   nsHardenCheck.Spec.SecurityContext.DeepCopy(),
+			BaselineRecordingReference: []string{
+				baselineRecordingReference + ":baseline",
+				baselineRecordingReference + ":baseline-2",
+			},
 		},
 	}
 

@@ -94,11 +94,8 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 	}
 
 	// Use custom baseline recording if specified, we assume that the existence of this was already validated
-	if m.WorkloadHardeningCheck.Spec.BaselineRecordingReference != nil && *m.WorkloadHardeningCheck.Spec.BaselineRecordingReference != "" {
-		baselineRecordings = []string{
-			*m.WorkloadHardeningCheck.Spec.BaselineRecordingReference,
-			*m.WorkloadHardeningCheck.Spec.BaselineRecordingReference + "-2",
-		}
+	if len(m.WorkloadHardeningCheck.Spec.BaselineRecordingReference) > 0 {
+		baselineRecordings = m.WorkloadHardeningCheck.Spec.BaselineRecordingReference
 	}
 
 	// Record baseline for both baseline recordings
