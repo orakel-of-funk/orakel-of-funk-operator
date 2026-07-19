@@ -10,15 +10,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/retry"
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
@@ -45,27 +42,9 @@ type WorkloadCheckManager struct {
 	allChecks map[string]checks.CheckInterface
 }
 
-func NewWorkloadCheckManager(ctx context.Context, valKeyClient *valkey.ValkeyClient, workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck) *WorkloadCheckManager {
+func NewWorkloadCheckManager(ctx context.Context, cl client.Client, valKeyClient *valkey.ValkeyClient, workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck) *WorkloadCheckManager {
 
 	log := logf.FromContext(ctx).WithName("WorkloadManager")
-	scheme := runtime.NewScheme()
-
-	//nolint:errcheck
-	clientgoscheme.AddToScheme(scheme)
-	//nolint:errcheck
-	checksv1alpha1.AddToScheme(scheme)
-
-	cfg, err := ctrl.GetConfig()
-	if err != nil {
-		log.Error(err, "failed to get Kubernetes config")
-		return nil
-	}
-
-	cl, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		log.Error(err, "failed to create Kubernetes client")
-		return nil
-	}
 
 	checkManager := &WorkloadCheckManager{
 		Client:                 cl,

@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	oflabels "github.com/orakel-of-funk/orakel-of-funk-operator/internal/labels"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
@@ -578,7 +579,7 @@ func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx con
 			Namespace: nsHardenCheck.Spec.TargetNamespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":       strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + nsHardenCheck.Spec.Suffix),
-				"app.kubernetes.io/managed-by": "oracle-of-funk",
+				oflabels.LabelManagedBy:        oflabels.ManagedByValue,
 				"appkubernetes.io/part-of":     nsHardenCheck.Name,
 			},
 		},

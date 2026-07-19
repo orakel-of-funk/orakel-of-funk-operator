@@ -11,6 +11,8 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	oflabels "github.com/orakel-of-funk/orakel-of-funk-operator/internal/labels"
 )
 
 func Clone(ctx context.Context, cl client.Client, sourceNamespace, targetNamespace, suffix string) error {
@@ -32,10 +34,10 @@ func Clone(ctx context.Context, cl client.Client, sourceNamespace, targetNamespa
 	// create targetNamespace
 	targetNs.Name = targetNamespace
 	targetNs.Labels = map[string]string{
-		"app.kubernetes.io/name":          targetNamespace,
-		"app.kubernetes.io/managed-by":    "oracle-of-funk",
-		"orakel.fhnw.ch/source-namespace": sourceNamespace,
-		"orakel.fhnw.ch/suffix":           suffix,
+		"app.kubernetes.io/name":    targetNamespace,
+		oflabels.LabelManagedBy:     oflabels.ManagedByValue,
+		oflabels.LabelSourceNamespace: sourceNamespace,
+		oflabels.LabelSuffix:        suffix,
 	}
 
 	err = cl.Create(ctx, targetNs)
@@ -178,10 +180,10 @@ func cloneClusterRoleBindings(ctx context.Context, cl client.Client, sourceNames
 				if clonedClusterRoleBinding.Labels == nil {
 					clonedClusterRoleBinding.Labels = make(map[string]string)
 				}
-				clonedClusterRoleBinding.Labels["app.kubernetes.io/managed-by"] = "oracle-of-funk"
-				clonedClusterRoleBinding.Labels["orakel.fhnw.ch/source-namespace"] = sourceNamespace
-				clonedClusterRoleBinding.Labels["orakel.fhnw.ch/target-namespace"] = targetNamespace
-				clonedClusterRoleBinding.Labels["orakel.fhnw.ch/suffix"] = suffix
+				clonedClusterRoleBinding.Labels[oflabels.LabelManagedBy] = oflabels.ManagedByValue
+				clonedClusterRoleBinding.Labels[oflabels.LabelSourceNamespace] = sourceNamespace
+				clonedClusterRoleBinding.Labels[oflabels.LabelTargetNamespace] = targetNamespace
+				clonedClusterRoleBinding.Labels[oflabels.LabelSuffix] = suffix
 
 				// override namespace!
 				for i, subject := range clonedClusterRoleBinding.Subjects {

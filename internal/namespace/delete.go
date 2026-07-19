@@ -6,8 +6,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	oflabels "github.com/orakel-of-funk/orakel-of-funk-operator/internal/labels"
 )
 
 func Delete(ctx context.Context, cl client.Client, targetNamespace string) error {
@@ -30,16 +33,23 @@ func Delete(ctx context.Context, cl client.Client, targetNamespace string) error
 		return err
 	}
 
-	// Remove all ClusterRoleBindings that are associated with this namespace
+	// Remove all ClusterRoleBindings that are associated with this namespace using a label selector
 	clusterRoleBindingList := &rbacv1.ClusterRoleBindingList{}
-	cl.List(ctx, clusterRoleBindingList)
+	err = cl.List(ctx, clusterRoleBindingList, &client.ListOptions{
+		LabelSelector: k8slabels.SelectorFromSet(map[string]string{
+			oflabels.LabelTargetNamespace: targetNamespace,
+		}),
+	})
+	if err != nil {
+		log.Error(err, "Failed to list ClusterRoleBindings for cleanup")
+		return err
+	}
+
 	for _, clusterRoleBinding := range clusterRoleBindingList.Items {
-		if clusterRoleBinding.Labels["orakel.fhnw.ch/target-namespace"] == targetNamespace {
-			log.Info("Deleting ClusterRoleBinding", "name", clusterRoleBinding.Name)
-			err = cl.Delete(ctx, &clusterRoleBinding)
-			if err != nil {
-				log.Error(err, "Failed to delete ClusterRoleBinding", "name", clusterRoleBinding.Name)
-			}
+		log.Info("Deleting ClusterRoleBinding", "name", clusterRoleBinding.Name)
+		err = cl.Delete(ctx, &clusterRoleBinding)
+		if err != nil {
+			log.Error(err, "Failed to delete ClusterRoleBinding", "name", clusterRoleBinding.Name)
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -25,7 +26,7 @@ var workloadhardeningchecklog = logf.Log.WithName("workloadhardeningcheck-resour
 func SetupWorkloadHardeningCheckWebhookWithManager(mgr ctrl.Manager, valkeyClient *valkey.ValkeyClient) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&checksv1alpha1.WorkloadHardeningCheck{}).
 		WithDefaulter(&WorkloadHardeningCheckCustomDefaulter{}).
-		WithValidator(&WorkloadHardeningCheckCustomValidator{ValKeyClient: valkeyClient}).
+		WithValidator(&WorkloadHardeningCheckCustomValidator{ValKeyClient: valkeyClient, Client: mgr.GetClient()}).
 		Complete()
 }
 
@@ -76,6 +77,7 @@ func (d *WorkloadHardeningCheckCustomDefaulter) Default(ctx context.Context, obj
 type WorkloadHardeningCheckCustomValidator struct {
 	// TODO(user): Add more fields as needed for validation
 	ValKeyClient *valkey.ValkeyClient
+	Client       client.Client
 }
 
 var _ webhook.CustomValidator = &WorkloadHardeningCheckCustomValidator{}
@@ -96,7 +98,7 @@ func (v *WorkloadHardeningCheckCustomValidator) ValidateCreate(ctx context.Conte
 	}
 
 	// ValKeyClient is not used in this validation, we could also pass nil here
-	workloadManager := workload.NewWorkloadCheckManager(ctx, v.ValKeyClient, workloadhardeningcheck)
+	workloadManager := workload.NewWorkloadCheckManager(ctx, v.Client, v.ValKeyClient, workloadhardeningcheck)
 	if workloadManager == nil {
 		workloadhardeningchecklog.Error(fmt.Errorf("failed to create workload manager"), "WorkloadHandler creation failed")
 		return nil, fmt.Errorf("failed to create workload manager for WorkloadHardeningCheck")
