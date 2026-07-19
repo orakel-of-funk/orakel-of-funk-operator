@@ -59,13 +59,12 @@ func NewWorkloadCheckManager(ctx context.Context, cl client.Client, valKeyClient
 }
 
 // Anlayzes all check runs in the WorkloadHardeningCheck.Status.CheckRuns
-// They are all compared to two baseline recordings, to detect anomalies in logs and metrics
+// They are compared to two baseline recordings using configured oracles to detect anomalies.
 // If anomalies are found, the check run is marked as failed and the anomalies are pushed to the check run status
 func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 
-	// Contains a drainMiner for each container in the baseline recording
-	logOraclePerContainer := make(map[string]*orakel.LogOrakel)
-	metricsOracle := orakel.NewMetricsOrakel()
+	// Create the oracle for log-based analysis
+	logAnalyzer := orakel.NewLogAnalyzer()
 
 	baselineRecordings := []string{
 		fmt.Sprintf("%s:%s:%s", m.WorkloadHardeningCheck.Namespace, m.WorkloadHardeningCheck.Spec.Suffix, "baseline"),
@@ -77,9 +76,8 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 		baselineRecordings = m.WorkloadHardeningCheck.Spec.BaselineRecordingReference
 	}
 
-	// Record baseline for both baseline recordings
+	// Load baselines into the oracle
 	for _, baseline := range baselineRecordings {
-		// Get results from the workload hardening check from ValKey
 		baselineRecording, err := m.valKeyClient.GetRecording(ctx, baseline)
 		if err != nil {
 			m.logger.Error(err, "Failed to get baseline recording from ValKey")
@@ -90,20 +88,10 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 			return nil
 		}
 
-		for containerName, logs := range baselineRecording.Logs {
-
-			drainMiner, exists := logOraclePerContainer[containerName]
-			if !exists {
-				// Initialize a new DrainMiner
-				drainMiner = orakel.NewLogOrakel()
-			}
-
-			drainMiner.LoadBaseline(logs)
-			logOraclePerContainer[containerName] = drainMiner
+		if err := logAnalyzer.LoadBaseline(baselineRecording); err != nil {
+			m.logger.Error(err, "Failed to load baseline into oracle")
+			return fmt.Errorf("failed to load baseline into oracle: %w", err)
 		}
-
-		// Metrics oracle is per pod/workload, we ignore the error as we checked for nil previously
-		_ = metricsOracle.LoadBaseline(baselineRecording)
 	}
 
 	checkRuns := m.WorkloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns
@@ -114,7 +102,7 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 	}
 
 	updatedCheckRuns := make(map[string]*checksv1alpha1.CheckRun, len(checkRuns))
-	// Iterate over all check runs and analyze the logs
+	// Iterate over all check runs and analyze them
 	for _, checkRun := range checkRuns {
 		checkRun := checkRun.DeepCopy() // Create a copy to avoid modifying the original
 
@@ -133,65 +121,22 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 		if checkRun.CheckSuccessfull != nil {
 			checkSuccessful = *checkRun.CheckSuccessfull // Use the existing value if it exists
 		}
-		for containerName, logs := range checkRecording.Logs {
-			drainMiner, exists := logOraclePerContainer[containerName]
-			if !exists {
-				m.logger.Info("No baseline found for pod", "podName", containerName)
-				continue
-			}
 
-			anomalies, _ := drainMiner.AnalyzeTarget(logs)
-			if len(anomalies) > 0 {
-				m.logger.Info("Anomalies found in check run", "checkRun", checkRun.Name, "containerName", containerName, "anomalyCount", len(anomalies))
-
-				if checkRun.FailureReason == "" {
-					// Set the failure reason only if it is not already set
-					checkRun.FailureReason = fmt.Sprintf("Anomalies found in logs of container %s", containerName)
-				} else {
-					// Append to the existing failure reason
-					checkRun.FailureReason += fmt.Sprintf(", Anomalies found in logs of container %s", containerName)
-				}
-				checkSuccessful = false
-
-				if checkRun.LogAnomalies == nil {
-					checkRun.LogAnomalies = make(map[string][]string)
-				}
-
-				if len(anomalies) <= 10 {
-
-					checkRun.LogAnomalies[containerName] = anomalies
-
-				} else if len(anomalies) > 10 {
-
-					anomalyMiner := orakel.NewLogOrakel()
-					anomalyMiner.LoadBaseline(logs)
-
-					anomalyTemplates := anomalyMiner.GetTemplates()
-
-					if len(anomalyTemplates) > 5 {
-						m.logger.V(2).Info("Trimming anomaly templates to last 5", "checkRun", checkRun.Name, "containerName", containerName)
-						// First 5 anomalies are the most significant ones
-						checkRun.LogAnomalies[containerName] = anomalyTemplates[:5]
-					} else {
-						checkRun.LogAnomalies[containerName] = anomalyTemplates
-					}
-
-				}
+		// Run the oracle analysis
+		analysisResult := logAnalyzer.AnalyzeTarget(checkRecording)
+		if !analysisResult.Success {
+			checkSuccessful = false
+			if checkRun.FailureReason == "" {
+				checkRun.FailureReason = analysisResult.FailureReason
 			} else {
-				m.logger.Info("No anomalies found in check run", "checkRun", checkRun.Name, "containerName", containerName)
+				checkRun.FailureReason += ", " + analysisResult.FailureReason
 			}
+			checkRun.LogAnomalies = analysisResult.Anomalies
 		}
 
 		// Update the check run with the analysis results
 		checkRun.CheckSuccessfull = ptr.To(checkSuccessful)
 		updatedCheckRuns[checkRun.Name] = checkRun
-
-		if checkRecording.RecordedMetrics != nil {
-			// Just add them to the check run, currently not further evaluated
-			cpuDeviation, memoryDeviation := metricsOracle.AnalyzeTarget(checkRecording)
-			checkRun.CpuDeviation = ptr.To(cpuDeviation)
-			checkRun.MemoryDeviation = ptr.To(memoryDeviation)
-		}
 	}
 
 	// Update the check run status

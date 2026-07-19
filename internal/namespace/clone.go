@@ -34,10 +34,10 @@ func Clone(ctx context.Context, cl client.Client, sourceNamespace, targetNamespa
 	// create targetNamespace
 	targetNs.Name = targetNamespace
 	targetNs.Labels = map[string]string{
-		"app.kubernetes.io/name":    targetNamespace,
-		oflabels.LabelManagedBy:     oflabels.ManagedByValue,
+		"app.kubernetes.io/name":      targetNamespace,
+		oflabels.LabelManagedBy:       oflabels.ManagedByValue,
 		oflabels.LabelSourceNamespace: sourceNamespace,
-		oflabels.LabelSuffix:        suffix,
+		oflabels.LabelSuffix:          suffix,
 	}
 
 	err = cl.Create(ctx, targetNs)
