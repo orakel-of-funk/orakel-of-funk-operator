@@ -18,8 +18,8 @@ import (
 	oflabels "github.com/orakel-of-funk/orakel-of-funk-operator/internal/labels"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
-	workloadUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/workload"
 	waitUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/wait"
+	workloadUtil "github.com/orakel-of-funk/orakel-of-funk-operator/pkg/util/workload"
 )
 
 // NewResumeFunc creates a ResumeFunc that scans for in-progress check namespaces
@@ -103,7 +103,7 @@ func NewResumeFunc(cl client.Client, valKeyClient *valkey.ValkeyClient) func(ctx
 			)
 
 			// Submit a resume function via the executor (accessed via closure over the parent CheckExecutor)
-			// We need a reference to the executor — this function is called from within Start(), 
+			// We need a reference to the executor — this function is called from within Start(),
 			// so we can't use 'e' directly. Instead, the caller should set up the closure correctly.
 			// The approach: this function just does the immediate work synchronously for simplicity.
 			// For each namespace that needs work, we submit it back to the executor.

@@ -595,9 +595,9 @@ func (r *NamespaceHardeningCheckReconciler) createWorkloadHardeningCheck(ctx con
 			Name:      strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + nsHardenCheck.Spec.Suffix),
 			Namespace: nsHardenCheck.Spec.TargetNamespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/name":       strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + nsHardenCheck.Spec.Suffix),
-				oflabels.LabelManagedBy:        oflabels.ManagedByValue,
-				"appkubernetes.io/part-of":     nsHardenCheck.Name,
+				"app.kubernetes.io/name":   strings.ToLower(resource.GetKind() + "-" + resource.GetName() + "-" + nsHardenCheck.Spec.Suffix),
+				oflabels.LabelManagedBy:    oflabels.ManagedByValue,
+				"appkubernetes.io/part-of": nsHardenCheck.Name,
 			},
 		},
 		Spec: checksv1alpha1.WorkloadHardeningCheckSpec{
