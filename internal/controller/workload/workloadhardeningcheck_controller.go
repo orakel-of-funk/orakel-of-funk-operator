@@ -7,6 +7,7 @@ import (
 	"time"
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	oflabels "github.com/orakel-of-funk/orakel-of-funk-operator/internal/labels"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/runner"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
@@ -82,7 +83,7 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
-	checkManager := workload.NewWorkloadCheckManager(ctx, r.ValKeyClient, workloadHardening)
+	checkManager := workload.NewWorkloadCheckManager(ctx, r.Client, r.ValKeyClient, workloadHardening)
 
 	// If the final check run is already finished, we set the Finished condition to true
 	if checkManager.WorkloadHardeningCheck.RecommendationExists() && checkManager.WorkloadHardeningCheck.FinalCheckRecorded() {
@@ -195,7 +196,7 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 		logger.Info("Starting Final check run with recommended security context")
 
 		securityContext := checkManager.WorkloadHardeningCheck.GetRecommendedSecurityContext()
-		finalCheckRunner := runner.NewWorkloadCheckRunner(ctx, r.ValKeyClient, r.Recorder, workloadHardening, "Final")
+		finalCheckRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "Final")
 
 		go finalCheckRunner.RunCheck(ctx, securityContext)
 
@@ -271,7 +272,7 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 func (r *WorkloadHardeningCheckReconciler) recordBaseline(ctx context.Context, workloadHardening *checksv1alpha1.WorkloadHardeningCheck, checkManager *workload.WorkloadCheckManager) (ctrl.Result, error) {
 	// Set the condition to indicate that we are starting the baseline recording
 
-	baselineRunner := runner.NewWorkloadCheckRunner(ctx, r.ValKeyClient, r.Recorder, workloadHardening, "baseline")
+	baselineRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "baseline")
 	go baselineRunner.RunCheck(ctx, workloadHardening.Spec.SecurityContext)
 
 	checkManager.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
@@ -285,7 +286,7 @@ func (r *WorkloadHardeningCheckReconciler) recordBaseline(ctx context.Context, w
 
 	offset := 10 + utilrand.Intn(9)                 // Random offset between 10 and 19 seconds to avoid all checks running at the same time
 	time.Sleep(time.Duration(offset) * time.Second) // Sleep for a short duration to allow the first baseline recording to start
-	baselineRunner = runner.NewWorkloadCheckRunner(ctx, r.ValKeyClient, r.Recorder, workloadHardening, "baseline-2")
+	baselineRunner = runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "baseline-2")
 	go baselineRunner.RunCheck(ctx, workloadHardening.Spec.SecurityContext)
 
 	// Requeue the reconciliation after the baseline duration, to continue with the next steps
@@ -345,7 +346,7 @@ func (r *WorkloadHardeningCheckReconciler) recordChecks(ctx context.Context, wor
 
 			securityContext := checkManager.GetSecurityContextForCheckType(checkType)
 
-			checkRunner := runner.NewWorkloadCheckRunner(ctx, r.ValKeyClient, r.Recorder, workloadHardening, checkType)
+			checkRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, checkType)
 
 			go checkRunner.RunCheck(ctx, securityContext)
 		}
@@ -377,7 +378,7 @@ func (r *WorkloadHardeningCheckReconciler) recordChecks(ctx context.Context, wor
 			}
 
 			securityContext := checkManager.GetSecurityContextForCheckType(checkType)
-			checkRunner := runner.NewWorkloadCheckRunner(ctx, r.ValKeyClient, r.Recorder, workloadHardening, checkType)
+			checkRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, checkType)
 			logger.Info("Running check", "checkType", checkType)
 			go checkRunner.RunCheck(ctx, securityContext)
 
@@ -403,7 +404,7 @@ func (r *WorkloadHardeningCheckReconciler) cleanupReconcileLoop(ctx context.Cont
 		&checkNamespaces,
 		&client.ListOptions{
 			LabelSelector: labels.SelectorFromSet(map[string]string{
-				"orakel.fhnw.ch/source-namespace": sourceNamespace,
+				oflabels.LabelSourceNamespace: sourceNamespace,
 			}),
 		},
 	)

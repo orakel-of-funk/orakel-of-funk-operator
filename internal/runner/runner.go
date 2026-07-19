@@ -14,14 +14,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -38,8 +34,6 @@ import (
 type WorkloadCheckRunner struct {
 	client.Client
 
-	scheme *runtime.Scheme
-
 	valKeyClient *valkey.ValkeyClient
 	logger       logr.Logger
 	recorder     record.EventRecorder
@@ -55,9 +49,11 @@ type WorkloadCheckRunner struct {
 // Required to convert "user" to "User", strings.ToTitle converts each rune to title case not just the first one
 var titleCase = cases.Title(language.English)
 
-// Convenience constructor for WorkloadCheckRunner without target namespace
+// NewWorkloadCheckRunner creates a WorkloadCheckRunner with a shared client.
+// The client, valKeyClient, and recorder are injected dependencies (not created internally).
 func NewWorkloadCheckRunner(
 	ctx context.Context,
+	cl client.Client,
 	valKeyClient *valkey.ValkeyClient,
 	recorder record.EventRecorder,
 	workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck,
@@ -66,6 +62,7 @@ func NewWorkloadCheckRunner(
 
 	return NewWorkloadCheckRunnerForNamespace(
 		ctx,
+		cl,
 		valKeyClient,
 		recorder,
 		workloadHardeningCheck,
@@ -75,8 +72,11 @@ func NewWorkloadCheckRunner(
 
 }
 
+// NewWorkloadCheckRunnerForNamespace creates a WorkloadCheckRunner targeting a specific namespace.
+// If targetNamespaceName is empty, one will be generated from the WHC spec.
 func NewWorkloadCheckRunnerForNamespace(
 	ctx context.Context,
+	cl client.Client,
 	valKeyClient *valkey.ValkeyClient,
 	recorder record.EventRecorder,
 	workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck,
@@ -94,23 +94,6 @@ func NewWorkloadCheckRunnerForNamespace(
 		conditionType = checksv1alpha1.ConditionTypeFinalCheck
 	}
 
-	scheme := runtime.NewScheme()
-
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(checksv1alpha1.AddToScheme(scheme))
-
-	cfg, err := ctrl.GetConfig()
-	if err != nil {
-		log.Error(err, "failed to get Kubernetes config")
-		return nil
-	}
-
-	cl, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		log.Error(err, "failed to create Kubernetes client")
-		return nil
-	}
-
 	checkRunner := &WorkloadCheckRunner{
 		Client:                 cl,
 		logger:                 log,
@@ -119,7 +102,6 @@ func NewWorkloadCheckRunnerForNamespace(
 		workloadHardeningCheck: &workloadhardeningcheck.WorkloadHardeningCheck{Client: cl, WorkloadHardeningCheck: *workloadHardeningCheck.DeepCopy()},
 		checkType:              checkType,
 		conditionType:          conditionType,
-		scheme:                 scheme,
 		targetNamespaceName:    targetNamespaceName,
 	}
 
