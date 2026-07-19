@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/executor"
 	oflabels "github.com/orakel-of-funk/orakel-of-funk-operator/internal/labels"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/recording"
@@ -41,6 +42,7 @@ type NamespaceHardeningCheckReconciler struct {
 	ValkeyClient *valkey.ValkeyClient
 	Scheme       *runtime.Scheme
 	Recorder     record.EventRecorder
+	Executor     *executor.CheckExecutor
 }
 
 // +kubebuilder:rbac:groups=orakel.ofunk.org,resources=namespacehardeningchecks,verbs=get;list;watch;create;update;patch;delete
@@ -145,31 +147,26 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 			Message: "No baseline recordings yet, creating new ones.",
 		})
 
-		go func() {
-			wg := sync.WaitGroup{}
-			wg.Add(2)
-			go func() {
-				defer wg.Done()
-				err := r.recordAllWorkloads(ctx, nsHardenCheck, "baseline")
-				if err != nil {
-					logger.Error(err, "Failed to record baseline for workloads in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
-				}
-			}()
-			go func() {
-				defer wg.Done()
-				err := r.recordAllWorkloads(ctx, nsHardenCheck, "baseline-2")
-				if err != nil {
-					logger.Error(err, "Failed to record second baseline for workloads in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
-				}
-			}()
-			wg.Wait()
-			r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
-				Type:    checksv1alpha1.ConditionTypeBaseline,
-				Status:  metav1.ConditionTrue,
-				Reason:  checksv1alpha1.ReasonBaselineRecordingFinished,
-				Message: "Baseline recordings completed for all workloads.",
-			})
-		}()
+		// Submit both baseline recordings via executor
+		baselineID1 := executor.NewCheckRunID(nsHardenCheck.Spec.TargetNamespace, nsHardenCheck.Name, "ns-baseline")
+		r.Executor.Submit(baselineID1, func(runCtx context.Context) {
+			if err := r.recordAllWorkloads(runCtx, nsHardenCheck, "baseline"); err != nil {
+				logger.Error(err, "Failed to record baseline for workloads in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
+			}
+		})
+
+		baselineID2 := executor.NewCheckRunID(nsHardenCheck.Spec.TargetNamespace, nsHardenCheck.Name, "ns-baseline-2")
+		r.Executor.Submit(baselineID2, func(runCtx context.Context) {
+			// Slight delay to ensure different log timestamps for Drain3 pattern matching
+			select {
+			case <-time.After(time.Duration(10+utilrand.Intn(9)) * time.Second):
+			case <-runCtx.Done():
+				return
+			}
+			if err := r.recordAllWorkloads(runCtx, nsHardenCheck, "baseline-2"); err != nil {
+				logger.Error(err, "Failed to record second baseline for workloads in target namespace", "namespace", nsHardenCheck.Spec.TargetNamespace)
+			}
+		})
 
 		return ctrl.Result{RequeueAfter: GetCheckDuration(nsHardenCheck) + 1*time.Minute}, nil
 
@@ -177,21 +174,35 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 
 	if meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline) != nil &&
 		meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline).Status != metav1.ConditionTrue {
-		condition := meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline)
-		if condition != nil && condition.LastTransitionTime.Add(GetCheckDuration(nsHardenCheck)+5*time.Minute).Before(time.Now()) {
-			// Baseline recording took too long, we assume it failed
-			logger.Error(fmt.Errorf("baseline recording timeout"), "Baseline recordings took too long, marking NamespaceHardeningCheck as failed",
-				"namespace", nsHardenCheck.Spec.TargetNamespace)
-			r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
-				Type:    checksv1alpha1.ConditionTypeFinished,
-				Status:  metav1.ConditionTrue,
-				Reason:  checksv1alpha1.ReasonFailed,
-				Message: "Baseline recordings took too long, marking NamespaceHardeningCheck as failed",
-			})
-			return ctrl.Result{}, nil
-		} else {
-			logger.Info("Baseline recordings are still in progress, waiting before creating WorkloadHardeningChecks")
 
+		// Check if both baselines have finished (executor no longer running them)
+		baselineID1 := executor.NewCheckRunID(nsHardenCheck.Spec.TargetNamespace, nsHardenCheck.Name, "ns-baseline")
+		baselineID2 := executor.NewCheckRunID(nsHardenCheck.Spec.TargetNamespace, nsHardenCheck.Name, "ns-baseline-2")
+
+		if !r.Executor.IsRunning(baselineID1) && !r.Executor.IsRunning(baselineID2) {
+			// Both finished — mark baseline as complete
+			r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
+				Type:    checksv1alpha1.ConditionTypeBaseline,
+				Status:  metav1.ConditionTrue,
+				Reason:  checksv1alpha1.ReasonBaselineRecordingFinished,
+				Message: "Baseline recordings completed for all workloads.",
+			})
+		} else {
+			condition := meta.FindStatusCondition(nsHardenCheck.Status.Conditions, checksv1alpha1.ConditionTypeBaseline)
+			if condition != nil && condition.LastTransitionTime.Add(GetCheckDuration(nsHardenCheck)+5*time.Minute).Before(time.Now()) {
+				// Baseline recording took too long, we assume it failed
+				logger.Error(fmt.Errorf("baseline recording timeout"), "Baseline recordings took too long, marking NamespaceHardeningCheck as failed",
+					"namespace", nsHardenCheck.Spec.TargetNamespace)
+				r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
+					Type:    checksv1alpha1.ConditionTypeFinished,
+					Status:  metav1.ConditionTrue,
+					Reason:  checksv1alpha1.ReasonFailed,
+					Message: "Baseline recordings took too long, marking NamespaceHardeningCheck as failed",
+				})
+				return ctrl.Result{}, nil
+			}
+
+			logger.Info("Baseline recordings are still in progress, waiting before creating WorkloadHardeningChecks")
 			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 		}
 	}
@@ -296,37 +307,43 @@ func (r *NamespaceHardeningCheckReconciler) Reconcile(ctx context.Context, req c
 		return r.Status().Update(ctx, nsHardenCheck)
 	})
 
-	success, err := r.createFinalCheckRun(ctx, nsHardenCheck)
-	if err != nil {
-		logger.Error(err, "Failed to create final check run for namespace hardening", "namespace", nsHardenCheck.Spec.TargetNamespace)
-		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
-			Type:    checksv1alpha1.ConditionTypeFinished,
-			Status:  metav1.ConditionTrue,
-			Reason:  checksv1alpha1.ConditionTypeFinished,
-			Message: fmt.Sprintf("Failed to create final check run for namespace hardening: %v", err),
+	// Submit the final check run via executor to avoid blocking the reconcile loop
+	finalCheckID := executor.NewCheckRunID(nsHardenCheck.Spec.TargetNamespace, nsHardenCheck.Name, "ns-final-check")
+	if !r.Executor.IsRunning(finalCheckID) {
+		r.Executor.Submit(finalCheckID, func(runCtx context.Context) {
+			success, err := r.createFinalCheckRun(runCtx, nsHardenCheck)
+			if err != nil {
+				logger.Error(err, "Failed to create final check run for namespace hardening", "namespace", nsHardenCheck.Spec.TargetNamespace)
+				r.SetCondition(runCtx, nsHardenCheck, metav1.Condition{
+					Type:    checksv1alpha1.ConditionTypeFinished,
+					Status:  metav1.ConditionTrue,
+					Reason:  checksv1alpha1.ConditionTypeFinished,
+					Message: fmt.Sprintf("Failed to create final check run for namespace hardening: %v", err),
+				})
+				return
+			}
+
+			if success {
+				logger.Info("Final check run for namespace hardening completed successfully", "namespace", nsHardenCheck.Spec.TargetNamespace)
+				r.SetCondition(runCtx, nsHardenCheck, metav1.Condition{
+					Type:    checksv1alpha1.ConditionTypeFinished,
+					Status:  metav1.ConditionTrue,
+					Reason:  checksv1alpha1.ReasonSuccess,
+					Message: "Namespace hardening checks completed successfully",
+				})
+			} else {
+				logger.Info("Final check run for namespace hardening failed", "namespace", nsHardenCheck.Spec.TargetNamespace)
+				r.SetCondition(runCtx, nsHardenCheck, metav1.Condition{
+					Type:    checksv1alpha1.ConditionTypeFinished,
+					Status:  metav1.ConditionTrue,
+					Reason:  checksv1alpha1.ReasonFailed,
+					Message: "Final check run failed, not all workloads are running successfully",
+				})
+			}
 		})
-		return ctrl.Result{}, err
 	}
 
-	if success {
-		logger.Info("Final check run for namespace hardening completed successfully", "namespace", nsHardenCheck.Spec.TargetNamespace)
-		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
-			Type:    checksv1alpha1.ConditionTypeFinished,
-			Status:  metav1.ConditionTrue,
-			Reason:  checksv1alpha1.ReasonSuccess,
-			Message: "Namespace hardening checks completed successfully",
-		})
-	} else {
-		logger.Info("Final check run for namespace hardening failed", "namespace", nsHardenCheck.Spec.TargetNamespace)
-		r.SetCondition(ctx, nsHardenCheck, metav1.Condition{
-			Type:    checksv1alpha1.ConditionTypeFinished,
-			Status:  metav1.ConditionTrue,
-			Reason:  checksv1alpha1.ReasonFailed,
-			Message: "Final check run failed, not all workloads are running successfully",
-		})
-	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
 }
 
 func (r *NamespaceHardeningCheckReconciler) recordAllWorkloads(ctx context.Context, nsHardenCheck *checksv1alpha1.NamespaceHardeningCheck, recordingName string) error {
