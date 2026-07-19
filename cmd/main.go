@@ -27,6 +27,7 @@ import (
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/controller/namespace"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/controller/workload"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/executor"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/valkey"
 	webhookv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
@@ -214,11 +215,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create the CheckExecutor — manages lifecycle of long-running check goroutines
+	checkExecutor := executor.NewCheckExecutor()
+	checkExecutor.ResumeFunc = executor.NewResumeFunc(mgr.GetClient(), valKeyClient)
+	if err := mgr.Add(checkExecutor); err != nil {
+		setupLog.Error(err, "unable to add CheckExecutor to manager")
+		os.Exit(1)
+	}
+
 	if err = (&workload.WorkloadHardeningCheckReconciler{
 		Client:       mgr.GetClient(),
 		Scheme:       mgr.GetScheme(),
 		Recorder:     mgr.GetEventRecorderFor("workload-hardening-controller"),
 		ValKeyClient: valKeyClient,
+		Executor:     checkExecutor,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkloadHardeningCheck")
 		os.Exit(1)
@@ -237,6 +247,7 @@ func main() {
 		Scheme:       mgr.GetScheme(),
 		Recorder:     mgr.GetEventRecorderFor("namespace-hardening-controller"),
 		ValkeyClient: valKeyClient,
+		Executor:     checkExecutor,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NamespaceHardeningCheck")
 		os.Exit(1)

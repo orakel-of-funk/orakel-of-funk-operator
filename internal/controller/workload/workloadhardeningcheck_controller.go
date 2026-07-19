@@ -7,6 +7,7 @@ import (
 	"time"
 
 	checksv1alpha1 "github.com/orakel-of-funk/orakel-of-funk-operator/api/v1alpha1"
+	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/executor"
 	oflabels "github.com/orakel-of-funk/orakel-of-funk-operator/internal/labels"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/namespace"
 	"github.com/orakel-of-funk/orakel-of-funk-operator/internal/runner"
@@ -26,6 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -37,6 +39,7 @@ type WorkloadHardeningCheckReconciler struct {
 	Scheme       *runtime.Scheme
 	Recorder     record.EventRecorder
 	ValKeyClient *valkey.ValkeyClient
+	Executor     *executor.CheckExecutor
 }
 
 // Required to convert "user" to "User", strings.ToTitle converts each rune to title case not just the first one
@@ -68,13 +71,32 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 	workloadHardening := &checksv1alpha1.WorkloadHardeningCheck{}
 	err := r.Get(ctx, req.NamespacedName, workloadHardening)
 	if err != nil {
-		// If the resource is not found it's usually because it was deleted, we need to cleanup remaining resources
 		if apierrors.IsNotFound(err) {
-			return r.cleanupReconcileLoop(ctx, req.Namespace)
+			// Resource is gone — nothing to do (finalizer should have handled cleanup)
+			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
 		logger.Error(err, "Failed to get WorkloadHardeningCheck, requeing")
 		return ctrl.Result{RequeueAfter: 1 * time.Minute}, err
+	}
+
+	// Handle deletion via finalizer
+	if workloadHardening.DeletionTimestamp != nil {
+		if controllerutil.ContainsFinalizer(workloadHardening, oflabels.FinalizerCleanup) {
+			return r.handleDeletion(ctx, workloadHardening)
+		}
+		// Finalizer already removed, nothing to do
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(workloadHardening, oflabels.FinalizerCleanup) {
+		controllerutil.AddFinalizer(workloadHardening, oflabels.FinalizerCleanup)
+		if err := r.Update(ctx, workloadHardening); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// ConditionFinished is set to true when the reconciliation is finished
@@ -196,9 +218,14 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 		logger.Info("Starting Final check run with recommended security context")
 
 		securityContext := checkManager.WorkloadHardeningCheck.GetRecommendedSecurityContext()
-		finalCheckRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "Final")
+		finalCheckID := executor.NewCheckRunID(workloadHardening.Namespace, workloadHardening.Name, "Final")
 
-		go finalCheckRunner.RunCheck(ctx, securityContext)
+		if !r.Executor.IsRunning(finalCheckID) {
+			r.Executor.Submit(finalCheckID, func(runCtx context.Context) {
+				finalCheckRunner := runner.NewWorkloadCheckRunner(runCtx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "Final")
+				finalCheckRunner.RunCheck(runCtx, securityContext)
+			})
+		}
 
 		checkManager.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 			Type:    checksv1alpha1.ConditionTypeFinished,
@@ -270,10 +297,31 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 
 // clones the target workloads into two baseline namespaces, one for each baseline recording
 func (r *WorkloadHardeningCheckReconciler) recordBaseline(ctx context.Context, workloadHardening *checksv1alpha1.WorkloadHardeningCheck, checkManager *workload.WorkloadCheckManager) (ctrl.Result, error) {
-	// Set the condition to indicate that we are starting the baseline recording
+	// Submit first baseline via executor
+	baselineID1 := executor.NewCheckRunID(workloadHardening.Namespace, workloadHardening.Name, "baseline")
+	if !r.Executor.IsRunning(baselineID1) {
+		r.Executor.Submit(baselineID1, func(runCtx context.Context) {
+			baselineRunner := runner.NewWorkloadCheckRunner(runCtx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "baseline")
+			baselineRunner.RunCheck(runCtx, workloadHardening.Spec.SecurityContext)
+		})
+	}
 
-	baselineRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "baseline")
-	go baselineRunner.RunCheck(ctx, workloadHardening.Spec.SecurityContext)
+	// Submit second baseline with a slight delay (10-19s) to ensure log timestamps differ.
+	// This is required for Drain3 pattern matching to work correctly.
+	baselineID2 := executor.NewCheckRunID(workloadHardening.Namespace, workloadHardening.Name, "baseline-2")
+	if !r.Executor.IsRunning(baselineID2) {
+		r.Executor.Submit(baselineID2, func(runCtx context.Context) {
+			// Delay to ensure different log timestamps between baselines
+			offset := 10 + utilrand.Intn(9) // Random offset between 10 and 19 seconds
+			select {
+			case <-time.After(time.Duration(offset) * time.Second):
+			case <-runCtx.Done():
+				return
+			}
+			baselineRunner := runner.NewWorkloadCheckRunner(runCtx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "baseline-2")
+			baselineRunner.RunCheck(runCtx, workloadHardening.Spec.SecurityContext)
+		})
+	}
 
 	checkManager.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 		Type:    checksv1alpha1.ConditionTypeFinished,
@@ -282,15 +330,8 @@ func (r *WorkloadHardeningCheckReconciler) recordBaseline(ctx context.Context, w
 		Message: "Baseline recording started",
 	})
 
-	// The baseline is recorded twice, to make the log matching better, as the logs are ingested using different timestamps
-
-	offset := 10 + utilrand.Intn(9)                 // Random offset between 10 and 19 seconds to avoid all checks running at the same time
-	time.Sleep(time.Duration(offset) * time.Second) // Sleep for a short duration to allow the first baseline recording to start
-	baselineRunner = runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "baseline-2")
-	go baselineRunner.RunCheck(ctx, workloadHardening.Spec.SecurityContext)
-
 	// Requeue the reconciliation after the baseline duration, to continue with the next steps
-	return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() + 10*time.Second}, nil
+	return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() + 30*time.Second}, nil
 
 }
 
@@ -320,11 +361,12 @@ func (r *WorkloadHardeningCheckReconciler) recordChecks(ctx context.Context, wor
 
 			if checkManager.WorkloadHardeningCheck.CheckRecorded(checkType) {
 				logger.Info("Check already finished, skipping", "checkType", checkType)
-				continue // Skip if the check is already recorded
+				continue
 			}
 
-			if checkManager.WorkloadHardeningCheck.CheckInProgress(checkType) {
+			checkRunID := executor.NewCheckRunID(workloadHardening.Namespace, workloadHardening.Name, checkType)
 
+			if r.Executor.IsRunning(checkRunID) {
 				if checkManager.WorkloadHardeningCheck.CheckOverdue(checkType) {
 					checkManager.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 						Type:    titleCase.String(checkType) + checksv1alpha1.ConditionTypeCheck,
@@ -332,26 +374,31 @@ func (r *WorkloadHardeningCheckReconciler) recordChecks(ctx context.Context, wor
 						Reason:  checksv1alpha1.ReasonRequeue,
 						Message: "Check is still running, but last transition time is older than 2x duration, requeuing",
 					})
-
 					logger.Info("Check is overdue, rescheduling", "checkType", checkType)
-
 				} else {
 					logger.Info("Check still running not yet overdue, skipping", "checkType", checkType)
-					continue // Skip if the check might still be running
+					continue
 				}
+			}
 
+			if checkManager.WorkloadHardeningCheck.CheckInProgress(checkType) && !r.Executor.IsRunning(checkRunID) {
+				// Condition says in-progress but executor doesn't have it — it may have crashed. Allow re-submit.
+				logger.Info("Check condition says in-progress but executor has no active run, re-submitting", "checkType", checkType)
 			}
 
 			logger.Info("Starting new check run", "checkType", checkType)
-
 			securityContext := checkManager.GetSecurityContextForCheckType(checkType)
 
-			checkRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, checkType)
-
-			go checkRunner.RunCheck(ctx, securityContext)
+			// Capture checkType for the closure
+			ct := checkType
+			sc := securityContext
+			r.Executor.Submit(checkRunID, func(runCtx context.Context) {
+				checkRunner := runner.NewWorkloadCheckRunner(runCtx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, ct)
+				checkRunner.RunCheck(runCtx, sc)
+			})
 		}
 
-		// Requeue the reconciliation after the baseline duration, to continue with the next steps
+		// Requeue the reconciliation after the check duration, to continue with the next steps
 		return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() + 10*time.Second}, nil
 	} else {
 		logger.Info("Running checks in sequential mode")
@@ -359,10 +406,12 @@ func (r *WorkloadHardeningCheckReconciler) recordChecks(ctx context.Context, wor
 		for _, checkType := range requiredChecks {
 			if checkManager.WorkloadHardeningCheck.CheckRecorded(checkType) {
 				logger.V(2).Info("Check already finished, skipping", "checkType", checkType)
-				continue // Skip if the check is already recorded
+				continue
 			}
-			if checkManager.WorkloadHardeningCheck.CheckInProgress(checkType) {
 
+			checkRunID := executor.NewCheckRunID(workloadHardening.Namespace, workloadHardening.Name, checkType)
+
+			if r.Executor.IsRunning(checkRunID) {
 				if checkManager.WorkloadHardeningCheck.CheckOverdue(checkType) {
 					checkManager.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
 						Type:    titleCase.String(checkType) + checksv1alpha1.ConditionTypeCheck,
@@ -370,68 +419,74 @@ func (r *WorkloadHardeningCheckReconciler) recordChecks(ctx context.Context, wor
 						Reason:  checksv1alpha1.ReasonRequeue,
 						Message: "Check is still running, but last transition time is older than duration + 1 minute, requeuing",
 					})
-
 				} else {
 					logger.V(2).Info("Check still running, skipping", "checkType", checkType)
-					continue // Skip if the check is already recorded
+					// In sequential mode, wait for the current one to finish before starting next
+					return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() + 10*time.Second}, nil
 				}
 			}
 
 			securityContext := checkManager.GetSecurityContextForCheckType(checkType)
-			checkRunner := runner.NewWorkloadCheckRunner(ctx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, checkType)
-			logger.Info("Running check", "checkType", checkType)
-			go checkRunner.RunCheck(ctx, securityContext)
+			ct := checkType
+			sc := securityContext
+			logger.Info("Running check", "checkType", ct)
+			r.Executor.Submit(checkRunID, func(runCtx context.Context) {
+				checkRunner := runner.NewWorkloadCheckRunner(runCtx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, ct)
+				checkRunner.RunCheck(runCtx, sc)
+			})
 
-			// Requeue the reconciliation after the  duration, to continue with the next check
+			// In sequential mode, requeue after duration to check on the next one
 			return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() + 10*time.Second}, nil
 		}
 	}
 
-	// We don't get here... either of the if/else branches should return
-	return ctrl.Result{}, nil
+	// All checks were either already finished or already running
+	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
-// Called if the WorkloadHardeningCheck instance is removed or deleted and we need to clean up the resources
-func (r *WorkloadHardeningCheckReconciler) cleanupReconcileLoop(ctx context.Context, sourceNamespace string) (ctrl.Result, error) {
-	log := logf.FromContext(ctx).WithName("cleanupReconcileLoop")
+// handleDeletion performs cleanup when a WorkloadHardeningCheck is being deleted.
+// It cancels active executor runs, deletes cloned namespaces and associated ClusterRoleBindings,
+// then removes the finalizer to allow Kubernetes to complete the deletion.
+func (r *WorkloadHardeningCheckReconciler) handleDeletion(ctx context.Context, workloadHardening *checksv1alpha1.WorkloadHardeningCheck) (ctrl.Result, error) {
+	log := logf.FromContext(ctx).WithName("handleDeletion")
+	log.Info("WorkloadHardeningCheck being deleted, cleaning up resources")
 
-	// If the custom resource is not found then it usually means that it was deleted or not created
-	log.Info("WorkloadHardeningCheck deleted, cleaning up resources")
+	// Cancel all active executor runs for this WHC
+	prefix := workloadHardening.Namespace + "/" + workloadHardening.Name + ":"
+	r.Executor.CancelByPrefix(prefix)
 
+	// Delete all cloned namespaces created by this WHC
 	checkNamespaces := corev1.NamespaceList{}
 	err := r.List(
 		ctx,
 		&checkNamespaces,
 		&client.ListOptions{
 			LabelSelector: labels.SelectorFromSet(map[string]string{
-				oflabels.LabelSourceNamespace: sourceNamespace,
+				oflabels.LabelSourceNamespace: workloadHardening.Namespace,
 			}),
 		},
 	)
-
 	if err != nil {
 		log.Error(err, "Failed to list namespaces for cleanup")
 		return ctrl.Result{}, err
 	}
-	if len(checkNamespaces.Items) == 0 {
-		log.Info("No namespaces found for cleanup")
-		return ctrl.Result{}, nil
-	}
-
-	log.Info("Found namespaces for cleanup", "count", len(checkNamespaces.Items))
 
 	for _, ns := range checkNamespaces.Items {
 		log.Info("Deleting namespace", "namespace", ns.Name)
-		err = namespace.Delete(ctx, r.Client, ns.Name)
-		if err != nil {
+		if err := namespace.Delete(ctx, r.Client, ns.Name); err != nil {
 			log.Error(err, "Failed to delete namespace", "namespace", ns.Name)
-		} else {
-			log.Info("Deleted namespace", "namespace", ns.Name)
 		}
 	}
 
-	return ctrl.Result{}, nil
+	// Remove the finalizer to allow deletion to proceed
+	controllerutil.RemoveFinalizer(workloadHardening, oflabels.FinalizerCleanup)
+	if err := r.Update(ctx, workloadHardening); err != nil {
+		log.Error(err, "Failed to remove finalizer")
+		return ctrl.Result{}, err
+	}
 
+	log.Info("Cleanup complete, finalizer removed")
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

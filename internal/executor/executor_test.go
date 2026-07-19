@@ -261,6 +261,7 @@ func TestMultipleConcurrentSubmissions(t *testing.T) {
 	}
 
 	wg.Wait()
+	time.Sleep(50 * time.Millisecond) // Allow deferred removeRun to complete
 	assert.Equal(t, int32(20), counter.Load())
 	assert.Equal(t, 0, exec.ActiveRunCount())
 }

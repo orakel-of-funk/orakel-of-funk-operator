@@ -69,6 +69,10 @@ type CheckExecutor struct {
 
 	// started signals that Start has been called and managerCtx is available.
 	started chan struct{}
+
+	// ResumeFunc is called once during Start to detect and resume in-progress checks
+	// from a previous run. It receives the executor's context. If nil, no resume is performed.
+	ResumeFunc func(ctx context.Context)
 }
 
 // NewCheckExecutor creates a new CheckExecutor.
@@ -89,6 +93,12 @@ func (e *CheckExecutor) Start(ctx context.Context) error {
 	close(e.started) // signal that the executor is ready to accept submissions
 
 	e.logger.Info("CheckExecutor started")
+
+	// Run the resume scanner if configured
+	if e.ResumeFunc != nil {
+		e.logger.Info("Running resume scanner for in-progress checks")
+		e.ResumeFunc(ctx)
+	}
 
 	// Block until the manager context is done (operator shutting down)
 	<-ctx.Done()
