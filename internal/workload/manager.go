@@ -67,6 +67,11 @@ func NewWorkloadCheckManager(ctx context.Context, cl client.Client, valKeyClient
 // If anomalies are found, the check run is marked as failed and the anomalies are pushed to the check run status
 func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 
+	// Re-fetch the CR to ensure we have the latest Status.CheckRuns
+	if err := m.Get(ctx, types.NamespacedName{Name: m.WorkloadHardeningCheck.Name, Namespace: m.WorkloadHardeningCheck.Namespace}, &m.WorkloadHardeningCheck.WorkloadHardeningCheck); err != nil {
+		return fmt.Errorf("failed to re-fetch WorkloadHardeningCheck before analysis: %w", err)
+	}
+
 	// Create the oracle for log-based analysis
 	logAnalyzer := orakel.NewLogAnalyzerWithNormalization(m.normalizeTimestamps)
 

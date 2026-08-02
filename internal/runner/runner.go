@@ -238,7 +238,7 @@ func (r *WorkloadCheckRunner) setStatusFinishedFailure(ctx context.Context, mess
 	}
 
 	retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if err := r.Get(ctx, types.NamespacedName{Name: r.workloadHardeningCheck.Name, Namespace: r.workloadHardeningCheck.Namespace}, r.workloadHardeningCheck); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: r.workloadHardeningCheck.Name, Namespace: r.workloadHardeningCheck.Namespace}, &r.workloadHardeningCheck.WorkloadHardeningCheck); err != nil {
 			if apierrors.IsNotFound(err) {
 				r.logger.Info("WorkloadHardeningCheck not found, skipping status update")
 				return nil // If the resource is not found, we can skip the update
@@ -264,7 +264,7 @@ func (r *WorkloadCheckRunner) setStatusFinishedFailure(ctx context.Context, mess
 			r.workloadHardeningCheck.WorkloadHardeningCheck.Status.CheckRuns[checkRun.Name] = &checkRun
 		}
 
-		return r.Status().Update(ctx, r.workloadHardeningCheck)
+		return r.Status().Update(ctx, &r.workloadHardeningCheck.WorkloadHardeningCheck)
 	})
 
 }
@@ -426,6 +426,7 @@ func (r *WorkloadCheckRunner) RunCheck(ctx context.Context, securityContext *che
 				r.targetNamespaceName,
 			),
 		)
+		return
 	}
 
 	r.logger.Info("workload is updated and ready for recording")

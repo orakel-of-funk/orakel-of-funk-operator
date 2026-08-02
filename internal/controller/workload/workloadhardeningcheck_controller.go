@@ -184,15 +184,23 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 	// The final check run has failed! We set the Finished condition to true and return
 	// ToDo: Analyse the results for the final check run and report the errors
 	if meta.IsStatusConditionPresentAndEqual(workloadHardening.Status.Conditions, checksv1alpha1.ConditionTypeFinalCheck, metav1.ConditionUnknown) {
-		logger.Info("Final check run failed, setting Finished condition to true")
-		err = checkManager.WorkloadHardeningCheck.SetCondition(ctx, metav1.Condition{
-			Type:    checksv1alpha1.ConditionTypeFinished,
-			Status:  metav1.ConditionTrue,
-			Reason:  "FinalCheckFailed",
-			Message: "Final check run failed, cannot proceed with checks",
-		})
+		finalCheckID := executor.NewCheckRunID(workloadHardening.Namespace, workloadHardening.Name, "Final")
 
-		return ctrl.Result{}, err
+		// If the condition is Unknown due to being overdue (e.g. operator restart), retry the check
+		if !r.Executor.IsRunning(finalCheckID) {
+			logger.Info("Final check run condition is Unknown and executor is not running it, re-submitting")
+
+			securityContext := checkManager.WorkloadHardeningCheck.GetRecommendedSecurityContext()
+			r.Executor.Submit(finalCheckID, func(runCtx context.Context) {
+				finalCheckRunner := runner.NewWorkloadCheckRunner(runCtx, r.Client, r.ValKeyClient, r.Recorder, workloadHardening, "Final")
+				finalCheckRunner.RunCheck(runCtx, securityContext)
+			})
+
+			return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() + 10*time.Second}, nil
+		}
+
+		// Executor is still running it — wait
+		return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() / 2}, nil
 	}
 
 	// If the final check run is already running, we need to wait for it to finish
@@ -206,10 +214,10 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 				Reason:  checksv1alpha1.ReasonRequeue,
 				Message: "Final check recording is still running, but last transition time is older than 2x duration, requeuing",
 			})
-		} else {
-			logger.Info("Final check run is still running, waiting for it to finish")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
+		logger.Info("Final check run is still running, waiting for it to finish")
 		return ctrl.Result{RequeueAfter: checkManager.WorkloadHardeningCheck.GetCheckDuration() / 2}, nil
 	}
 
@@ -254,10 +262,10 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 				Reason:  checksv1alpha1.ReasonRequeue,
 				Message: "Baseline recording is still running, but last transition time is older than 2x duration, requeuing",
 			})
-		} else {
-			logger.Info("Baseline not recorded yet, waiting for baseline recording to finish")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
+		logger.Info("Baseline not recorded yet, waiting for baseline recording to finish")
 		return ctrl.Result{RequeueAfter: duration / 2}, nil
 	}
 
