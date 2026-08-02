@@ -151,11 +151,11 @@ DurationDelayLoop:
 	}
 
 	workloadRecording := &WorkloadRecording{
-		Type:      r.checkType,
-		Success:   true,
-		StartTime: metav1.NewTime(startTime),
-		EndTime:   metav1.NewTime(time.Now()),
-		Logs:      podLogs,
+		Type:            r.checkType,
+		PodStateRunning: true,
+		StartTime:       metav1.NewTime(startTime),
+		EndTime:         metav1.NewTime(time.Now()),
+		Logs:            podLogs,
 	}
 
 	r.log.Info("Completed workload hardening check recording")

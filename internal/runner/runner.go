@@ -456,10 +456,10 @@ func (r *WorkloadCheckRunner) RunCheck(ctx context.Context, securityContext *che
 	r.checkSuccessful, _ = workloadUtil.VerifyReadiness(workloadUnderTest, r.Client)
 
 	workloadRecording := recording.WorkloadRecording{
-		Type:      r.checkType,
-		Success:   r.checkSuccessful,
-		StartTime: startTime,
-		EndTime:   metav1.Now(),
+		Type:            r.checkType,
+		PodStateRunning: r.checkSuccessful,
+		StartTime:       startTime,
+		EndTime:         metav1.Now(),
 
 		RecordedMetrics:               recordedMetrics,
 		SecurityContextConfigurations: securityContext,
@@ -554,11 +554,11 @@ func (r *WorkloadCheckRunner) waitForUpdatedPods(ctx context.Context, workloadUn
 				// prefix with original namespace to avoid conflict if suffix is reused
 				r.workloadHardeningCheck.GetNamespace()+":"+r.workloadHardeningCheck.Spec.Suffix,
 				&recording.WorkloadRecording{
-					Type:      r.checkType,
-					Success:   false,
-					StartTime: startTime,
-					EndTime:   metav1.Now(),
-					Logs:      logs,
+					Type:            r.checkType,
+					PodStateRunning: false,
+					StartTime:       startTime,
+					EndTime:         metav1.Now(),
+					Logs:            logs,
 				},
 			)
 			if err != nil {

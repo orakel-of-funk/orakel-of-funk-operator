@@ -1,3 +1,4 @@
+---
 apiVersion: orakel.ofunk.org/v1alpha1
 kind: WorkloadHardeningCheck
 metadata:
@@ -9,6 +10,6 @@ spec:
   targetRef:
     apiVersion: apps/v1
     kind: StatefulSet
-    name: mariadb
+    name: oof-mariadb
   recordingDuration: 2m
   suffix: orakel

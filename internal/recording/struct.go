@@ -23,7 +23,7 @@ type WorkloadRecording struct {
 	Type string `json:"type,omitempty"`
 
 	// Indicates wether this configuration ran successfully or not
-	Success bool `json:"success"`
+	PodStateRunning bool `json:"podStateRunning"`
 
 	// Time the recording started at
 	StartTime metav1.Time `json:"startTime,omitempty"`

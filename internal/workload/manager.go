@@ -117,7 +117,7 @@ func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 			return fmt.Errorf("no recording found for check run %s", checkRun.Name)
 		}
 
-		checkSuccessful := checkRecording.Success // If the pod was crashLooping, the recording will be marked as unsuccessful
+		checkSuccessful := checkRecording.PodStateRunning // If the pod was crashLooping, the recording will be marked as unsuccessful
 		if checkRun.CheckSuccessfull != nil {
 			checkSuccessful = *checkRun.CheckSuccessfull // Use the existing value if it exists
 		}

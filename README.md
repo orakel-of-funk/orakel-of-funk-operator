@@ -185,6 +185,5 @@ Some signals are only recorded if the pod reaches the `ready` state, while other
 There are two independent oracles implemented in the operator, which are used to compare the behavior of the workloads:
 
 1. `LogOrakel`: This oracle analyzes the logs of the recorded baselines and compares them to logs of the `checkRuns`. The oracle is based on the [Drain3](https://github.com/logpai/Drain3) algorithm as implemented by [faceair/drain](https://github.com/faceair/drain). Logs that are not present in the baseline, are considered anomalies, thus indicating a change in the workload's behavior. If any anomalies are detected, the oracle will mark the check as failed, and store the detected anomalies in the `CheckRun` status.
-1. `MetricsOrakel`: This oracle analyzes the metrics of the recorded baselines and compares them to metrics of the `checkRuns`. The oracle calculates the mean and standard deviation of the metrics and compares them to the baseline. If the metric is outside of the range of the baselines, it is considered a deviation and flagged on the `checkRun`.
 
 The oracles are implement in `pkg/orakel/` from where they can be included into other golang projects as well.

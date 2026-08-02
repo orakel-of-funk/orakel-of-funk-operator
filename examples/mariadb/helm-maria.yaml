@@ -8,407 +8,138 @@ metadata:
     app.kubernetes.io/part-of: orakel-of-funk
     app.kubernetes.io/component: test
 ---
-# Source: mariadb/templates/networkpolicy.yaml
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
-metadata:
-  name: mariadb
-  namespace: oof-mariadb
-  labels:
-    app.kubernetes.io/instance: mariadb
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/instance: mariadb
-      app.kubernetes.io/managed-by: Helm
-      app.kubernetes.io/name: mariadb
-      app.kubernetes.io/version: 11.4.7
-      helm.sh/chart: mariadb-20.5.9
-  policyTypes:
-    - Ingress
-    - Egress
-  egress:
-    - {}
-  ingress:
-    - ports:
-        - port: 3306
-        - port: 3306
----
-# Source: mariadb/templates/primary/pdb.yaml
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: mariadb
-  namespace: oof-mariadb
-  labels:
-    app.kubernetes.io/instance: mariadb
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
-    app.kubernetes.io/component: primary
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/instance: mariadb
-      app.kubernetes.io/name: mariadb
-      app.kubernetes.io/component: primary
----
-# Source: mariadb/templates/serviceaccount.yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: mariadb
-  namespace: oof-mariadb
-  labels:
-    app.kubernetes.io/instance: mariadb
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
-automountServiceAccountToken: false
----
-# Source: mariadb/templates/secrets.yaml
+# Source: mariadb/templates/secret.yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: mariadb
+  name: oof-mariadb
   namespace: oof-mariadb
   labels:
-    app.kubernetes.io/instance: mariadb
+    app.kubernetes.io/instance: oof-mariadb
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
+    app.kubernetes.io/version: 12.3.2
+    helm.sh/chart: mariadb-0.16.7
 type: Opaque
 data:
-  mariadb-root-password: "NVhnNW1hcjBYQw=="
+  mariadb-root-password: 'bVd6clIzMFBKUTJNUGhxZEhJMk11WE5qMlA2QVpLZVQ='
 ---
-# Source: mariadb/templates/primary/configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: mariadb
-  namespace: oof-mariadb
-  labels:
-    app.kubernetes.io/instance: mariadb
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
-    app.kubernetes.io/component: primary
-data:
-  my.cnf: |-
-    [mysqld]
-    skip-name-resolve
-    explicit_defaults_for_timestamp
-    basedir=/opt/bitnami/mariadb
-    datadir=/bitnami/mariadb/data
-    plugin_dir=/opt/bitnami/mariadb/plugin
-    port=3306
-    socket=/opt/bitnami/mariadb/tmp/mysql.sock
-    tmpdir=/opt/bitnami/mariadb/tmp
-    max_allowed_packet=16M
-    bind-address=*
-    pid-file=/opt/bitnami/mariadb/tmp/mysqld.pid
-    log-error=/opt/bitnami/mariadb/logs/mysqld.log
-    character-set-server=UTF8
-    collation-server=utf8_general_ci
-    slow_query_log=0
-    long_query_time=10.0
-    binlog_expire_logs_seconds=2592000
-
-    [client]
-    port=3306
-    socket=/opt/bitnami/mariadb/tmp/mysql.sock
-    default-character-set=UTF8
-    plugin_dir=/opt/bitnami/mariadb/plugin
-
-    [manager]
-    port=3306
-    socket=/opt/bitnami/mariadb/tmp/mysql.sock
-    pid-file=/opt/bitnami/mariadb/tmp/mysqld.pid
----
-# Source: mariadb/templates/headless-svc.yaml
+# Source: mariadb/templates/service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: mariadb-headless
+  name: oof-mariadb
   namespace: oof-mariadb
   labels:
-    app.kubernetes.io/instance: mariadb
+    app.kubernetes.io/instance: oof-mariadb
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
+    app.kubernetes.io/version: 12.3.2
+    helm.sh/chart: mariadb-0.16.7
 spec:
   type: ClusterIP
-  publishNotReadyAddresses: true
-  clusterIP: None
   ports:
-    - name: mysql
-      port: 3306
-      protocol: TCP
-      targetPort: mysql
+  - port: 3306
+    targetPort: mysql
+    protocol: TCP
+    name: mysql
   selector:
-    app.kubernetes.io/instance: mariadb
+    app.kubernetes.io/instance: oof-mariadb
     app.kubernetes.io/name: mariadb
-    app.kubernetes.io/part-of: mariadb
 ---
-# Source: mariadb/templates/primary/svc.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: mariadb
-  namespace: oof-mariadb
-  labels:
-    app.kubernetes.io/instance: mariadb
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
-    app.kubernetes.io/component: primary
-  annotations:
-spec:
-  type: ClusterIP
-  sessionAffinity: None
-  ports:
-    - name: mysql
-      port: 3306
-      protocol: TCP
-      targetPort: mysql
-      nodePort: null
-  selector:
-    app.kubernetes.io/instance: mariadb
-    app.kubernetes.io/name: mariadb
-    app.kubernetes.io/component: primary
----
-# Source: mariadb/templates/primary/statefulset.yaml
+# Source: mariadb/templates/statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: mariadb
+  name: oof-mariadb
   namespace: oof-mariadb
   labels:
-    app.kubernetes.io/instance: mariadb
+    app.kubernetes.io/instance: oof-mariadb
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: mariadb
-    app.kubernetes.io/version: 11.4.7
-    helm.sh/chart: mariadb-20.5.9
-    app.kubernetes.io/part-of: mariadb
-    app.kubernetes.io/component: primary
+    app.kubernetes.io/version: 12.3.2
+    helm.sh/chart: mariadb-0.16.7
 spec:
   replicas: 1
-  revisionHistoryLimit: 10
+  serviceName: oof-mariadb
   selector:
     matchLabels:
-      app.kubernetes.io/instance: mariadb
+      app.kubernetes.io/instance: oof-mariadb
       app.kubernetes.io/name: mariadb
-      app.kubernetes.io/part-of: mariadb
-      app.kubernetes.io/component: primary
-  serviceName: mariadb-headless
-  updateStrategy:
-    type: RollingUpdate
   template:
     metadata:
-      annotations:
-        checksum/configuration: 2b844a37764ef4d4296f6ff1f4342ee1be846427bd36274d6dcfd24fb7b6d26a
       labels:
-        app.kubernetes.io/instance: mariadb
+        app.kubernetes.io/instance: oof-mariadb
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: mariadb
-        app.kubernetes.io/version: 11.4.7
-        helm.sh/chart: mariadb-20.5.9
-        app.kubernetes.io/part-of: mariadb
-        app.kubernetes.io/component: primary
+        app.kubernetes.io/version: 12.3.2
+        helm.sh/chart: mariadb-0.16.7
     spec:
+      serviceAccountName: default
       automountServiceAccountToken: false
-      serviceAccountName: mariadb
-      affinity:
-        podAffinity:
-
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app.kubernetes.io/instance: mariadb
-                    app.kubernetes.io/name: mariadb
-                    app.kubernetes.io/component: primary
-                topologyKey: kubernetes.io/hostname
-              weight: 1
-        nodeAffinity:
-
       securityContext:
-        fsGroup: 1001
-        fsGroupChangePolicy: Always
-        supplementalGroups: []
-        sysctls: []
+        fsGroup: 999
       initContainers:
-        - name: preserve-logs-symlinks
-          image: docker.io/bitnami/mariadb:11.4.7-debian-12-r2
-          imagePullPolicy: "IfNotPresent"
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: true
-            runAsGroup: 1001
-            runAsNonRoot: true
-            runAsUser: 1001
-            seLinuxOptions: {}
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            limits:
-              cpu: 750m
-              ephemeral-storage: 2Gi
-              memory: 768Mi
-            requests:
-              cpu: 500m
-              ephemeral-storage: 50Mi
-              memory: 512Mi
-          command:
-            - /bin/bash
-          args:
-            - -ec
-            - |
-              #!/bin/bash
-
-              . /opt/bitnami/scripts/libfs.sh
-              # We copy the logs folder because it has symlinks to stdout and stderr
-              if ! is_dir_empty /opt/bitnami/mariadb/logs; then
-                cp -r /opt/bitnami/mariadb/logs /emptydir/app-logs-dir
-              fi
-          volumeMounts:
-            - name: empty-dir
-              mountPath: /emptydir
       containers:
-        - name: mariadb
-          image: docker.io/bitnami/mariadb:11.4.7-debian-12-r2
-          imagePullPolicy: "IfNotPresent"
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: true
-            runAsGroup: 1001
-            runAsNonRoot: true
-            runAsUser: 1001
-            seLinuxOptions: {}
-            seccompProfile:
-              type: RuntimeDefault
-          env:
-            - name: BITNAMI_DEBUG
-              value: "false"
-            - name: MARIADB_ROOT_PASSWORD_FILE
-              value: /opt/bitnami/mariadb/secrets/mariadb-root-password
-            - name: MARIADB_DATABASE
-              value: "my_database"
-            - name: MARIADB_ENABLE_SSL
-              value: "no"
-          ports:
-            - name: mysql
-              containerPort: 3306
-          livenessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 120
-            periodSeconds: 10
-            successThreshold: 1
-            timeoutSeconds: 1
-            exec:
-              command:
-                - /bin/bash
-                - -ec
-                - |
-                  password_aux="${MARIADB_ROOT_PASSWORD:-}"
-                  if [[ -f "${MARIADB_ROOT_PASSWORD_FILE:-}" ]]; then
-                      password_aux=$(cat "$MARIADB_ROOT_PASSWORD_FILE")
-                  fi
-                  mariadb-admin status -uroot -p"${password_aux}"
-          readinessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            successThreshold: 1
-            timeoutSeconds: 1
-            exec:
-              command:
-                - /bin/bash
-                - -ec
-                - |
-                  password_aux="${MARIADB_ROOT_PASSWORD:-}"
-                  if [[ -f "${MARIADB_ROOT_PASSWORD_FILE:-}" ]]; then
-                      password_aux=$(cat "$MARIADB_ROOT_PASSWORD_FILE")
-                  fi
-                  mariadb-admin ping -uroot -p"${password_aux}"
-          resources:
-            limits:
-              cpu: 750m
-              ephemeral-storage: 2Gi
-              memory: 768Mi
-            requests:
-              cpu: 500m
-              ephemeral-storage: 50Mi
-              memory: 512Mi
-          volumeMounts:
-            - name: data
-              mountPath: /bitnami/mariadb
-            - name: config
-              mountPath: /opt/bitnami/mariadb/conf/my.cnf
-              subPath: my.cnf
-            - name: mariadb-credentials
-              mountPath: /opt/bitnami/mariadb/secrets/
-            - name: empty-dir
-              mountPath: /tmp
-              subPath: tmp-dir
-            - name: empty-dir
-              mountPath: /opt/bitnami/mariadb/conf
-              subPath: app-conf-dir
-            - name: empty-dir
-              mountPath: /opt/bitnami/mariadb/tmp
-              subPath: app-tmp-dir
-            - name: empty-dir
-              mountPath: /opt/bitnami/mariadb/logs
-              subPath: app-logs-dir
+      - name: mariadb
+        image: docker.io/mariadb:12.3.2@sha256:628f228f0fd5913a220438693576b29b6fe4dc1fa0a1298c0e98579fae28635f
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 999
+        env:
+        - name: MARIADB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: oof-mariadb
+              key: mariadb-root-password
+        ports:
+        - name: mysql
+          containerPort: 3306
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - bash
+            - -c
+            - healthcheck.sh --connect --innodb_initialized
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - bash
+            - -c
+            - healthcheck.sh --connect --innodb_initialized
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 1
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+        - mountPath: /tmp
+          name: tmp-volume
       volumes:
-        - name: empty-dir
-          emptyDir: {}
-        - name: config
-          configMap:
-            name: mariadb
-        - name: mariadb-credentials
-          secret:
-            secretName: mariadb
-            items:
-              - key: mariadb-root-password
-                path: mariadb-root-password
+      - name: tmp-volume
+        emptyDir: {}
   volumeClaimTemplates:
-    - metadata:
-        name: data
-        labels:
-          app.kubernetes.io/instance: mariadb
-          app.kubernetes.io/name: mariadb
-          app.kubernetes.io/component: primary
-      spec:
-        accessModes:
-          - "ReadWriteOnce"
-        resources:
-          requests:
-            storage: "8Gi"
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: data
+      labels:
+        app.kubernetes.io/instance: oof-mariadb
+        app.kubernetes.io/name: mariadb
+    spec:
+      accessModes:
+      - 'ReadWriteOnce'
+      resources:
+        requests:
+          storage: '8Gi'

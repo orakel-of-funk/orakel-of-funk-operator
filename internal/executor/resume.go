@@ -171,9 +171,9 @@ func buildResumeFn(
 
 		// Store recording in ValKey
 		workloadRecording := &recording.WorkloadRecording{
-			Type:    checkType,
-			Success: true, // We assume success since we can't verify readiness reliably on resume
-			Logs:    logs,
+			Type:            checkType,
+			PodStateRunning: true, // We assume success since we can't verify readiness reliably on resume
+			Logs:            logs,
 		}
 
 		valkeyKey := whc.Namespace + ":" + whc.Spec.Suffix
