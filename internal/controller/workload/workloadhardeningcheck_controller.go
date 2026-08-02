@@ -36,10 +36,11 @@ import (
 // WorkloadHardeningCheckReconciler reconciles a WorkloadHardeningCheck object
 type WorkloadHardeningCheckReconciler struct {
 	client.Client
-	Scheme       *runtime.Scheme
-	Recorder     record.EventRecorder
-	ValKeyClient *valkey.ValkeyClient
-	Executor     *executor.CheckExecutor
+	Scheme              *runtime.Scheme
+	Recorder            record.EventRecorder
+	ValKeyClient        *valkey.ValkeyClient
+	Executor            *executor.CheckExecutor
+	NormalizeTimestamps bool
 }
 
 // Required to convert "user" to "User", strings.ToTitle converts each rune to title case not just the first one
@@ -105,7 +106,7 @@ func (r *WorkloadHardeningCheckReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
-	checkManager := workload.NewWorkloadCheckManager(ctx, r.Client, r.ValKeyClient, workloadHardening)
+	checkManager := workload.NewWorkloadCheckManager(ctx, r.Client, r.ValKeyClient, workloadHardening, r.NormalizeTimestamps)
 
 	// If the final check run is already finished, we set the Finished condition to true
 	if checkManager.WorkloadHardeningCheck.RecommendationExists() && checkManager.WorkloadHardeningCheck.FinalCheckRecorded() {

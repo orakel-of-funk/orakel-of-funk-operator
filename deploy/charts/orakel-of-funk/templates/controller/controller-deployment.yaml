@@ -47,6 +47,7 @@ spec:
           - --metrics-bind-address=:8443
           - --metrics-cert-path=/tmp/k8s-metrics-server/metrics-certs
           - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
+          - --normalize-timestamps={{ .Values.orakel.normalizeTimestamps }}
         image: "{{ .Values.orakel.image.registry }}/{{ .Values.orakel.image.repository }}:{{ .Values.orakel.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.orakel.image.pullPolicy }}
         name: orkael-of-funk-controller-manager

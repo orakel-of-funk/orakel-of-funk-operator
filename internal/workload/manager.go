@@ -40,9 +40,12 @@ type WorkloadCheckManager struct {
 	logger logr.Logger
 
 	allChecks map[string]checks.CheckInterface
+
+	// normalizeTimestamps enables timestamp normalization in the log analyzer
+	normalizeTimestamps bool
 }
 
-func NewWorkloadCheckManager(ctx context.Context, cl client.Client, valKeyClient *valkey.ValkeyClient, workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck) *WorkloadCheckManager {
+func NewWorkloadCheckManager(ctx context.Context, cl client.Client, valKeyClient *valkey.ValkeyClient, workloadHardeningCheck *checksv1alpha1.WorkloadHardeningCheck, normalizeTimestamps bool) *WorkloadCheckManager {
 
 	log := logf.FromContext(ctx).WithName("WorkloadManager")
 
@@ -52,6 +55,7 @@ func NewWorkloadCheckManager(ctx context.Context, cl client.Client, valKeyClient
 		WorkloadHardeningCheck: workloadhardeningcheck.WorkloadHardeningCheck{Client: cl, WorkloadHardeningCheck: *workloadHardeningCheck.DeepCopy()},
 		valKeyClient:           valKeyClient,
 		allChecks:              checks.GetAllChecks(),
+		normalizeTimestamps:    normalizeTimestamps,
 	}
 
 	return checkManager
@@ -64,7 +68,7 @@ func NewWorkloadCheckManager(ctx context.Context, cl client.Client, valKeyClient
 func (m *WorkloadCheckManager) AnalyzeCheckRuns(ctx context.Context) error {
 
 	// Create the oracle for log-based analysis
-	logAnalyzer := orakel.NewLogAnalyzer()
+	logAnalyzer := orakel.NewLogAnalyzerWithNormalization(m.normalizeTimestamps)
 
 	baselineRecordings := []string{
 		fmt.Sprintf("%s:%s:%s", m.WorkloadHardeningCheck.Namespace, m.WorkloadHardeningCheck.Spec.Suffix, "baseline"),

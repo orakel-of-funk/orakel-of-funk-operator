@@ -22,6 +22,9 @@ type LogOrakel struct {
 	TargetLogCount    int
 
 	Anomalies []string
+
+	// normalizeTimestamps enables timestamp normalization before training/matching
+	normalizeTimestamps bool
 }
 
 // Returns a new LogOrakel instance with a default drain configuration
@@ -32,7 +35,16 @@ func NewLogOrakel() *LogOrakel {
 	return &LogOrakel{
 		Drain: drain.New(drainConfig),
 	}
+}
 
+// NewLogOrakelWithNormalization creates a LogOrakel with optional timestamp normalization.
+func NewLogOrakelWithNormalization(normalizeTimestamps bool) *LogOrakel {
+	drainConfig := drain.DefaultConfig()
+
+	return &LogOrakel{
+		Drain:               drain.New(drainConfig),
+		normalizeTimestamps: normalizeTimestamps,
+	}
 }
 
 // GetTemplates returns a map of templates extracted from the trained model
@@ -70,7 +82,11 @@ func (o *LogOrakel) LoadBaseline(input []string) (int, int) {
 			continue
 		}
 		o.BaselineLogsCount++
-		o.Train(strings.TrimSpace(line))
+		line = strings.TrimSpace(line)
+		if o.normalizeTimestamps {
+			line = NormalizeTimestamps(line)
+		}
+		o.Train(line)
 	}
 
 	return o.BaselineLogsCount, len(o.Clusters())
@@ -89,6 +105,9 @@ func (o *LogOrakel) AnalyzeTarget(input []string) ([]string, int) {
 		}
 		o.TargetLogCount++
 		line = strings.TrimSpace(line)
+		if o.normalizeTimestamps {
+			line = NormalizeTimestamps(line)
+		}
 		matchedCluster := o.Match(line)
 		if matchedCluster == nil {
 			o.Anomalies = append(o.Anomalies, line)

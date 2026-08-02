@@ -98,7 +98,7 @@ func (v *WorkloadHardeningCheckCustomValidator) ValidateCreate(ctx context.Conte
 	}
 
 	// ValKeyClient is not used in this validation, we could also pass nil here
-	workloadManager := workload.NewWorkloadCheckManager(ctx, v.Client, v.ValKeyClient, workloadhardeningcheck)
+	workloadManager := workload.NewWorkloadCheckManager(ctx, v.Client, v.ValKeyClient, workloadhardeningcheck, false)
 	if workloadManager == nil {
 		workloadhardeningchecklog.Error(fmt.Errorf("failed to create workload manager"), "WorkloadHandler creation failed")
 		return nil, fmt.Errorf("failed to create workload manager for WorkloadHardeningCheck")

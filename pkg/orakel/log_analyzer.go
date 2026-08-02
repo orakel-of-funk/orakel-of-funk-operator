@@ -14,6 +14,9 @@ type LogAnalyzer struct {
 
 	// Maximum number of anomaly entries to report per container
 	maxAnomaliesPerContainer int
+
+	// normalizeTimestamps enables timestamp normalization before training/matching
+	normalizeTimestamps bool
 }
 
 // NewLogAnalyzer creates a new LogAnalyzer oracle.
@@ -21,6 +24,18 @@ func NewLogAnalyzer() *LogAnalyzer {
 	return &LogAnalyzer{
 		orakels:                  make(map[string]*LogOrakel),
 		maxAnomaliesPerContainer: 10,
+	}
+}
+
+// NewLogAnalyzerWithNormalization creates a new LogAnalyzer with optional timestamp normalization.
+// When normalizeTimestamps is true, timestamps in log lines are replaced with a <TIME> token
+// before feeding them to the drain algorithm, preventing false anomalies caused by
+// differing timestamps between baseline and check recordings.
+func NewLogAnalyzerWithNormalization(normalizeTimestamps bool) *LogAnalyzer {
+	return &LogAnalyzer{
+		orakels:                  make(map[string]*LogOrakel),
+		maxAnomaliesPerContainer: 10,
+		normalizeTimestamps:      normalizeTimestamps,
 	}
 }
 
@@ -34,7 +49,7 @@ func (la *LogAnalyzer) LoadBaseline(rec *recording.WorkloadRecording) error {
 	for containerName, logs := range rec.Logs {
 		o, exists := la.orakels[containerName]
 		if !exists {
-			o = NewLogOrakel()
+			o = NewLogOrakelWithNormalization(la.normalizeTimestamps)
 			la.orakels[containerName] = o
 		}
 		o.LoadBaseline(logs)
@@ -79,7 +94,7 @@ func (la *LogAnalyzer) AnalyzeTarget(rec *recording.WorkloadRecording) *Analysis
 				result.Anomalies[containerName] = anomalies
 			} else {
 				// Use drain to summarize the anomalies into templates
-				anomalyMiner := NewLogOrakel()
+				anomalyMiner := NewLogOrakelWithNormalization(la.normalizeTimestamps)
 				anomalyMiner.LoadBaseline(logs)
 				templates := anomalyMiner.GetTemplates()
 

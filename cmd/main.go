@@ -54,6 +54,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var normalizeTimestamps bool
 
 	var metricsCertPath, metricsCertName, metricsCertKey string
 
@@ -89,6 +90,11 @@ func main() {
 		"The host of the Valkey server.")
 	flag.StringVar(&valkeyPort, "valkey-port", valkeyPort,
 		"The port of the Valkey server.")
+
+	flag.BoolVar(&normalizeTimestamps, "normalize-timestamps", false,
+		"Enable timestamp normalization in log analysis. When enabled, timestamps in log lines are "+
+			"replaced with a <TIME> token before feeding them to the drain algorithm, preventing false "+
+			"anomalies caused by differing timestamps between baseline and check recordings.")
 
 	opts := zap.Options{
 		Development: false,
@@ -224,11 +230,12 @@ func main() {
 	}
 
 	if err = (&workload.WorkloadHardeningCheckReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("workload-hardening-controller"),
-		ValKeyClient: valKeyClient,
-		Executor:     checkExecutor,
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		Recorder:            mgr.GetEventRecorderFor("workload-hardening-controller"),
+		ValKeyClient:        valKeyClient,
+		Executor:            checkExecutor,
+		NormalizeTimestamps: normalizeTimestamps,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkloadHardeningCheck")
 		os.Exit(1)
