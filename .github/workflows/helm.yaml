@@ -38,7 +38,7 @@ jobs:
         name: orakel-helm-chart
         repository: orakel-of-funk/orakel-of-funk-operator
         tag: ${{ steps.docker_meta.outputs.version }}
-        path: deploy/charts/orakel-of-funk
+        path: deploy/charts/orakel-helm-chart
         registry: ghcr.io
         registry_username: ${{ github.actor }}
         registry_password: ${{ secrets.GITHUB_TOKEN }}
